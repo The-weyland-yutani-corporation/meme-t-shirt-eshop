@@ -71,6 +71,7 @@ pre-agent-steps:
           const preliminary = stateModule.classifyBootstrapState({
             pullRequests,
             issues,
+            repository: context.repo.owner + '/' + context.repo.repo,
             defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
           });
           const comments = preliminary.issue
@@ -84,6 +85,7 @@ pre-agent-steps:
             pullRequests,
             issues,
             comments,
+            repository: context.repo.owner + '/' + context.repo.repo,
             defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
           });
         } catch (error) {
@@ -152,8 +154,8 @@ pre-agent-steps:
       }
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
-      check_hash "$cast_validator" "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
-      check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      check_hash "$cast_validator" "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
+      check_hash "$bootstrap_validator" "9abc590bd7afb57f2da070df62c1b6a416d2f0a12cf7f39ad71399c57cfa7b8b"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --root "$PWD" \
@@ -280,7 +282,10 @@ safe-outputs:
               }
               const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
               for (const file of payload.files || []) {
-                const target = join(checkout, ...String(file.path || '').split('/'));
+                const target = validatorModule.resolveBootstrapMaterializationTarget(
+                  checkout,
+                  file?.path,
+                );
                 mkdirSync(dirname(target), { recursive: true });
                 writeFileSync(target, String(file.content || ''));
               }
@@ -315,6 +320,7 @@ safe-outputs:
                 const preliminary = stateModule.classifyBootstrapState({
                   pullRequests,
                   issues,
+                  repository: context.repo.owner + '/' + context.repo.repo,
                   defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
                 });
                 const comments = preliminary.issue
@@ -332,6 +338,7 @@ safe-outputs:
                     pullRequests,
                     issues,
                     comments,
+                    repository: context.repo.owner + '/' + context.repo.repo,
                     defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
                   }),
                 };

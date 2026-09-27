@@ -56,7 +56,7 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "4362c1c3b9d686bc920a76991cd8756cadd0beaf3021fe12171834188df665b7"
+      "source_sha256": "9616c7396f1d1a14ca9811c0d16a132fd2b084824930bd40ce475c0cf9c89ff2"
     }
   ],
   "shared_runtime": [
@@ -74,7 +74,7 @@
       "package_destination": ".github/workflows/shared/squad-cast-validator.mjs",
       "destination": ".github/workflows/shared/squad-cast-validator.mjs",
       "ownership": "manifest",
-      "sha256": "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
+      "sha256": "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
     },
     {
       "path": "shared/squad-bootstrap-validator.mjs",
@@ -82,7 +82,7 @@
       "package_destination": ".github/workflows/shared/squad-bootstrap-validator.mjs",
       "destination": ".github/workflows/shared/squad-bootstrap-validator.mjs",
       "ownership": "manifest",
-      "sha256": "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      "sha256": "9abc590bd7afb57f2da070df62c1b6a416d2f0a12cf7f39ad71399c57cfa7b8b"
     },
     {
       "path": "shared/squad-improvement-gate.mjs",

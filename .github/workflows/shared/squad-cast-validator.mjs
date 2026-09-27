@@ -475,22 +475,28 @@ function parseCastingPair(registryRaw, historyRaw, source, errors, options = {})
 
 function committedRegistry(root, errors) {
   try {
-    const registryRaw = execFileSync(
-      'git',
-      ['show', 'HEAD:.squad/casting/registry.json'],
-      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    const historyRaw = execFileSync(
-      'git',
-      ['show', 'HEAD:.squad/casting/history.json'],
-      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    const readCommittedFile = (path) => {
+      const match = execFileSync(
+        'git',
+        ['ls-tree', '--name-only', 'HEAD', '--', path],
+        { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      ).trim();
+      if (!match) return undefined;
+      return execFileSync(
+        'git',
+        ['show', `HEAD:${path}`],
+        { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+    };
+    const registryRaw = readCommittedFile('.squad/casting/registry.json');
+    const historyRaw = readCommittedFile('.squad/casting/history.json');
+    if (registryRaw === undefined && historyRaw === undefined) return null;
     return parseCastingPair(
       registryRaw,
       historyRaw,
       'registry base',
       errors,
-      { legacy: JSON.parse(registryRaw)?.schema === undefined },
+      { legacy: registryRaw === undefined || JSON.parse(registryRaw)?.schema === undefined },
     );
   } catch (error) {
     errors.push(`registry base: committed registry/history pair is unavailable or malformed (${error.message})`);

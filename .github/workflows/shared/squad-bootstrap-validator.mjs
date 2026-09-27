@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { validateCastTree } from './squad-cast-validator.mjs';
@@ -39,6 +39,17 @@ const LINK_PLACEHOLDER = '{{CAST_PR_URL}}';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const CANONICAL_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const MATERIALIZABLE_CAST_PATHS = new Set([
+  '.squad/team.md',
+  '.squad/routing.md',
+  '.squad/casting/registry.json',
+  '.squad/casting/history.json',
+  '.squad/casting/policy.json',
+  '.github/agents/squad.agent.md',
+  'meet-the-squad.md',
+]);
+const MATERIALIZABLE_CHARTER_PATTERN =
+  /^\.squad\/agents\/[a-z0-9]+(?:-[a-z0-9]+)*\/charter\.md$/;
 
 function chunkField(index) {
   return `payload_chunk_${String(index).padStart(2, '0')}`;
@@ -176,6 +187,10 @@ function pullBase(pullRequest) {
   return pullRequest?.base?.ref ?? pullRequest?.baseRefName ?? '';
 }
 
+function pullHeadRepository(pullRequest) {
+  return pullRequest?.head?.repo?.full_name ?? pullRequest?.headRepository?.nameWithOwner ?? '';
+}
+
 function issueBody(issue) {
   return String(issue?.body ?? '');
 }
@@ -236,15 +251,22 @@ export function isBootstrapResearchSeed(comment) {
   return String(comment?.body ?? '').startsWith(`${BOOTSTRAP_RESEARCH_TITLE}\n`);
 }
 
-export function classifyBootstrapState({ pullRequests, issues, comments, defaultBranch }) {
-  if (!Array.isArray(pullRequests) || !Array.isArray(issues) || !defaultBranch) {
-    throw new Error('Bootstrap state requires pullRequests, issues, and defaultBranch.');
+export function classifyBootstrapState({
+  pullRequests,
+  issues,
+  comments,
+  repository,
+  defaultBranch,
+}) {
+  if (!Array.isArray(pullRequests) || !Array.isArray(issues) || !repository || !defaultBranch) {
+    throw new Error('Bootstrap state requires pullRequests, issues, repository, and defaultBranch.');
   }
 
   const relevantPullRequests = pullRequests.filter(
     (pullRequest) =>
-      pullHead(pullRequest) === BOOTSTRAP_BRANCH ||
-      pullRequest?.title === BOOTSTRAP_PR_TITLE,
+      pullHeadRepository(pullRequest) === repository &&
+      (pullHead(pullRequest) === BOOTSTRAP_BRANCH ||
+        pullRequest?.title === BOOTSTRAP_PR_TITLE),
   );
   const malformedPullRequest = relevantPullRequests.find(
     (pullRequest) =>
@@ -367,6 +389,40 @@ function normalizePath(value) {
     return null;
   }
   return value.replace(/^\.\//, '');
+}
+
+export function resolveBootstrapMaterializationTarget(root, value) {
+  const normalized = normalizePath(value);
+  if (!normalized) {
+    throw new Error('Bootstrap file path must be a concrete POSIX path.');
+  }
+  if (
+    !MATERIALIZABLE_CAST_PATHS.has(normalized) &&
+    !MATERIALIZABLE_CHARTER_PATTERN.test(normalized)
+  ) {
+    throw new Error(`Bootstrap file path is not a Cast path: ${value}`);
+  }
+
+  const rootPath = resolve(root);
+  const target = resolve(rootPath, ...normalized.split('/'));
+  const relativeTarget = relative(rootPath, target);
+  if (
+    relativeTarget.length === 0 ||
+    relativeTarget === '..' ||
+    relativeTarget.startsWith(`..${sep}`) ||
+    isAbsolute(relativeTarget)
+  ) {
+    throw new Error(`Bootstrap file path escapes the checkout: ${value}`);
+  }
+
+  let current = rootPath;
+  for (const segment of normalized.split('/')) {
+    current = join(current, segment);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+      throw new Error(`Bootstrap file path traverses a symbolic link: ${value}`);
+    }
+  }
+  return target;
 }
 
 function parseTeamMembers(team) {

@@ -8,7 +8,7 @@
     {
       "source": "workflows/squad-workflows.manifest.json",
       "destination": ".github/aw/squad-workflows.manifest.json",
-      "sha256": "260eb345aa8932302d7c6d7bc6812d4fb069f82b9c6e38b276750d1eec284f97"
+      "sha256": "4acf1f033e1f8d2bee8723c9121a497f56d4086c7e80b5c8d8d36a1c2813f4ba"
     },
     {
       "source": "workflows/shared/builtins/fact-checker-charter.md",
@@ -53,12 +53,12 @@
     {
       "source": "workflows/shared/squad-bootstrap-validator.mjs",
       "destination": ".github/workflows/shared/squad-bootstrap-validator.mjs",
-      "sha256": "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      "sha256": "9abc590bd7afb57f2da070df62c1b6a416d2f0a12cf7f39ad71399c57cfa7b8b"
     },
     {
       "source": "workflows/shared/squad-cast-validator.mjs",
       "destination": ".github/workflows/shared/squad-cast-validator.mjs",
-      "sha256": "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
+      "sha256": "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
     },
     {
       "source": "workflows/shared/squad-implementation-provenance.mjs",
@@ -88,7 +88,7 @@
     {
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
-      "sha256": "f871ae7dda3b6509b2931241adcb617c062ad0c04b33bea8ca6ec048bdba6329"
+      "sha256": "d4986bf38b321c3fbba989cd7cceeb1864a677ebb52b461bcea1915d162c2215"
     },
     {
       "source": "workflows/package/squad-deps-worker.md",
