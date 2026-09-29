@@ -17,6 +17,7 @@ on:
       - .github/workflows/shared/squad-bootstrap-trigger-probe.json
   workflow_dispatch: null
 if: github.ref_name == github.event.repository.default_branch
+timeout-minutes: 60
 permissions:
   contents: read
   copilot-requests: write
@@ -720,9 +721,16 @@ Run exactly:
 ```
 
 Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes reading
-`.github/workflows/squad-bootstrap-envelope.json`. That file is the only
-transport source for one `materialize_bootstrap` call.
+`Squad bootstrap validation passed.` authorizes the following single shell
+command:
+
+```bash
+safeoutputs materialize_bootstrap "$(cat "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json")"
+```
+
+Run that command exactly once. It passes the envelope JSON directly from disk
+to the typed safe-output CLI without reading, displaying, summarizing, or
+copying any envelope property or payload chunk through model context.
 
 The envelope contains:
 
@@ -734,12 +742,12 @@ The envelope contains:
 
 Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
 payload bytes, so every string is at most 8,003 bytes and stays conservatively
-below gh-aw's 10,240-byte per-string input limit. Pass every property from the
-envelope byte-for-byte to the typed safe-output call. Do not reserialize the
-payload, recompute metadata, rename slots, add unused slots, or split semantic
-generation into separate Cast and research outputs. The writer reconstructs the
-one shared payload and verifies order, count, bounds, UTF-8, total byte length,
-and SHA-256 before parsing any JSON.
+below gh-aw's 10,240-byte per-string input limit. The direct CLI call passes
+every property from the envelope byte-for-byte. Do not reserialize the payload,
+recompute metadata, rename slots, add unused slots, or split semantic generation
+into separate Cast and research outputs. The writer reconstructs the one shared
+payload and verifies order, count, bounds, UTF-8, total byte length, and SHA-256
+before parsing any JSON.
 
 Any validation or envelope error is terminal: emit no materialization output,
-report the exact validator stderr, and stop.
+report the exact validator or CLI stderr, and stop.
