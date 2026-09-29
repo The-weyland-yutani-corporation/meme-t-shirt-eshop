@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(gh aw --version | awk '{print $NF}')" = "v0.89.21"
+          gh aw --version 2>&1 | grep -Fx "gh aw version v0.89.21"
 
       - name: Compile agentic workflows
         run: gh aw compile --strict --no-check-update
