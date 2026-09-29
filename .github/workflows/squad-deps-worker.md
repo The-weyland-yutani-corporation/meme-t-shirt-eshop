@@ -7,6 +7,9 @@ engine:
 ambient-folders:
   - .squad
 safe-outputs:
+  github-app:
+    app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
+    private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
   jobs:
     upsert-research-artifact:
       description: Create or replace the single Squad research artifact for this issue.
@@ -567,11 +570,11 @@ jobs:
     steps:
       - name: Mint Squad GitHub App token
         id: squad-app-token
-        if: ${{ vars.SQUAD_GITHUB_APP_ID != '' }}
+        if: ${{ vars.SQUAD_GITHUB_APP_ID != '' || vars.DARK_FACTORY_MAGE_APP_ID != '' }}
         uses: actions/create-github-app-token@v3.2.0
         with:
-          app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.SQUAD_GITHUB_APP_ID || vars.DARK_FACTORY_MAGE_APP_ID }}
+          private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY || secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
       - name: Resolve Squad standalone release
         id: squad-release

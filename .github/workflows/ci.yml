@@ -85,6 +85,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Mint read-only dark factory App token
+        id: dark-factory-app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
+          permission-actions: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: read
+          permission-metadata: read
+          permission-pull-requests: read
+
+      - name: Verify dark factory App installation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.dark-factory-app.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$REPOSITORY" --jq .full_name)" = "$REPOSITORY"
+          gh api installation/repositories --paginate --jq '.repositories[].full_name' |
+            grep -Fx "$REPOSITORY"
+          gh api "repos/$REPOSITORY/actions/workflows" --jq '.total_count' >/dev/null
+          gh api -H "Accept: application/vnd.github+json" \
+            "repos/$REPOSITORY/commits/$SHA/check-runs" --jq '.total_count' >/dev/null
+          gh api "repos/$REPOSITORY/issues?state=all&per_page=1" --jq 'length' >/dev/null
+          gh api "repos/$REPOSITORY/pulls?state=all&per_page=1" --jq 'length' >/dev/null
+          gh api "repos/$REPOSITORY/contents/.github/workflows" --jq 'length' >/dev/null
+
       - name: Check out repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -95,6 +126,9 @@ jobs:
 
       - name: Run Squad install verifier
         run: node .github/workflows/shared/squad-install-verifier.mjs --verify-install
+
+      - name: Test Squad bootstrap transport
+        run: node --test .github/workflows/shared/squad-bootstrap-validator.test.mjs
 
   protected-path-policy:
     name: Protected path policy
