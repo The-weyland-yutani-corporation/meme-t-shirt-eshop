@@ -1,0 +1,209 @@
+name: Deploy Azure App Service
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-app-service-production
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_APP_NAME: ${{ vars.AZURE_APP_NAME }}
+  HEALTH_PATH: ${{ vars.AZURE_HEALTH_PATH || '/api/health' }}
+
+jobs:
+  build:
+    if: >-
+      vars.AZURE_DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the successful revision
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Node.js
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Build Next.js application
+        if: ${{ hashFiles('package.json') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          else
+            npm install
+          fi
+          npm run build
+
+      - name: Create deployment package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .deployment
+          mkdir -p .deployment/app
+
+          if [[ -f package.json && -d .next/standalone ]]; then
+            cp -a .next/standalone/. .deployment/app/
+            jq '.scripts = (.scripts // {}) | .scripts.start = "node server.js"' \
+              .deployment/app/package.json > .deployment/app/package.tmp.json
+            mv .deployment/app/package.tmp.json .deployment/app/package.json
+            mkdir -p .deployment/app/.next
+            cp -a .next/static .deployment/app/.next/static
+            [[ ! -d public ]] || cp -a public .deployment/app/public
+          elif [[ -f package.json ]]; then
+            npm prune --omit=dev
+            cp package.json .deployment/app/
+            [[ ! -f package-lock.json ]] || cp package-lock.json .deployment/app/
+            [[ ! -d .next ]] || cp -a .next .deployment/app/.next
+            [[ ! -d public ]] || cp -a public .deployment/app/public
+            cp -a node_modules .deployment/app/node_modules
+            for config in next.config.js next.config.mjs next.config.ts; do
+              [[ ! -f "$config" ]] || cp "$config" .deployment/app/
+            done
+          else
+            echo "No package.json found; packaging repository content."
+            tar \
+              --exclude=.git \
+              --exclude=.github \
+              --exclude=infra \
+              --exclude=.deployment \
+              -cf - . | tar -xf - -C .deployment/app
+          fi
+
+          cd .deployment/app
+          zip -q -r ../app.zip .
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: app-package
+          path: .deployment/app.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Check out the successful revision
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Download deployment package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: app-package
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_APP_NAME; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is not configured"; exit 1; }
+          done
+          [[ -n "${{ vars.AZURE_STAGING_URL }}" ]] || { echo "::error::AZURE_STAGING_URL is not configured"; exit 1; }
+          [[ -n "${{ vars.AZURE_PRODUCTION_URL }}" ]] || { echo "::error::AZURE_PRODUCTION_URL is not configured"; exit 1; }
+          [[ "$HEALTH_PATH" == /* ]] || { echo "::error::AZURE_HEALTH_PATH must start with /"; exit 1; }
+
+      - name: Deploy package to staging
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
+        with:
+          app-name: ${{ env.AZURE_APP_NAME }}
+          slot-name: staging
+          package: app.zip
+
+      - name: Check staging health
+        env:
+          BASE_URL: ${{ vars.AZURE_STAGING_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${BASE_URL%/}${HEALTH_PATH}"
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 15 \
+              --retry 2 --retry-delay 2 "$url" > /dev/null; then
+              echo "Staging is healthy."
+              exit 0
+            fi
+            echo "Staging check $attempt/12 failed; waiting 10 seconds."
+            sleep 10
+          done
+          echo "::error::Staging did not become healthy within the bounded check."
+          exit 1
+
+  swap-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Swap staging to production and verify
+        env:
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp deployment slot swap \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --slot staging \
+            --target-slot production
+
+          url="${PRODUCTION_URL%/}${HEALTH_PATH}"
+          healthy=false
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 15 \
+              --retry 2 --retry-delay 2 "$url" > /dev/null; then
+              healthy=true
+              break
+            fi
+            echo "Production check $attempt/12 failed; waiting 10 seconds."
+            sleep 10
+          done
+
+          if [[ "$healthy" == true ]]; then
+            echo "Production is healthy."
+            exit 0
+          fi
+
+          echo "::error::Production regressed; swapping the previous version back."
+          az webapp deployment slot swap \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --slot staging \
+            --target-slot production
+          exit 1
