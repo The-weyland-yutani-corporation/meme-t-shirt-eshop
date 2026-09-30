@@ -1,0 +1,22 @@
+{
+  "schema": "squad-casting-policy/v1",
+  "naming_modes": ["descriptive", "themed"],
+  "universes": [
+    { "name": "The Usual Suspects", "capacity": 6, "shape": ["small", "noir"] },
+    { "name": "Reservoir Dogs", "capacity": 8, "shape": ["small", "noir"] },
+    { "name": "Alien", "capacity": 8, "shape": ["small", "sci-fi"] },
+    { "name": "The Goonies", "capacity": 8, "shape": ["small", "adventure"] },
+    { "name": "The Matrix", "capacity": 10, "shape": ["medium", "sci-fi"] },
+    { "name": "Firefly", "capacity": 10, "shape": ["medium", "sci-fi"] },
+    { "name": "Star Wars", "capacity": 12, "shape": ["medium", "sci-fi"] },
+    { "name": "Breaking Bad", "capacity": 12, "shape": ["medium", "drama"] },
+    { "name": "Futurama", "capacity": 12, "shape": ["medium", "sci-fi"] },
+    { "name": "Ocean's Eleven", "capacity": 14, "shape": ["medium", "heist"] },
+    { "name": "Arrested Development", "capacity": 15, "shape": ["medium", "comedy"] },
+    { "name": "Lost", "capacity": 18, "shape": ["large", "mystery"] },
+    { "name": "DC Universe", "capacity": 18, "shape": ["large", "action"] },
+    { "name": "The Simpsons", "capacity": 20, "shape": ["large", "comedy"] },
+    { "name": "Marvel Cinematic Universe", "capacity": 25, "shape": ["large", "action"] }
+  ],
+  "team_size": { "min": 4, "max": 7 }
+}
