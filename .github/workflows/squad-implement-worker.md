@@ -395,6 +395,7 @@ safe-outputs:
     allowed-branches:
       - squad/implement-*
     allowed-files:
+      - .gitignore
       - "*.c"
       - "**/*.c"
       - "*.cc"
