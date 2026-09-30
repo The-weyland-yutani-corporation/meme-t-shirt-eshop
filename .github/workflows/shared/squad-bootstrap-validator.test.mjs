@@ -5,6 +5,7 @@ import {
   createBootstrapPayloadEnvelope,
   reconstructBootstrapChunkItems,
 } from './squad-bootstrap-validator.mjs';
+import { validateRoutingTargets } from './squad-cast-validator.mjs';
 
 function chunkItems(payloadText) {
   const envelope = createBootstrapPayloadEnvelope(payloadText);
@@ -71,4 +72,25 @@ test('rejects missing, duplicate, reordered, and metadata-inconsistent chunk ite
       /metadata is inconsistent/,
     );
   }
+});
+
+test('requires routing targets to use active registry agent IDs', () => {
+  const routing = `# Squad Routing
+
+## Routing Table
+
+| Work Type | Route To | Examples |
+| --- | --- | --- |
+| Storefront application features | storefront | Product catalog |
+`;
+  assert.deepEqual(validateRoutingTargets(routing, ['storefront']), []);
+
+  const displayNameRouting = routing.replace('| storefront |', '| Storefront Engineer |');
+  assert.deepEqual(
+    validateRoutingTargets(displayNameRouting, ['storefront']),
+    [
+      'routing: target "Storefront Engineer" is not an active registry agent ID',
+      'routing: active member "storefront" has no route',
+    ],
+  );
 });
