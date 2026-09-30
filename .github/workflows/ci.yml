@@ -1,0 +1,208 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number for an explicit GITHUB_TOKEN continuation
+        required: false
+        type: string
+      base_sha:
+        description: Validated pull request base SHA
+        required: false
+        type: string
+      head_sha:
+        description: Validated pull request head SHA
+        required: false
+        type: string
+      head_ref:
+        description: Validated pull request head ref
+        required: false
+        type: string
+      actor_login:
+        description: Pull request author login
+        required: false
+        type: string
+      actor_type:
+        description: Pull request author type
+        required: false
+        type: string
+      labels_json:
+        description: JSON array of pull request label names
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Application checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Node.js
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm ci
+
+      - name: Lint
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm run lint --if-present
+
+      - name: Typecheck
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm run typecheck --if-present
+
+      - name: Test
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm run test --if-present
+
+      - name: Build
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm run build --if-present
+
+      - name: Record sparse-repository skip
+        if: ${{ hashFiles('package.json') == '' }}
+        run: echo "package.json is not present; application checks are not yet applicable."
+
+  agentic-workflows:
+    name: GH-AW compiled workflow freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned gh-aw
+        uses: github/gh-aw-actions/setup-cli@924af5fdc64061cfbf66fb584c8b07e2ac230c60 # v0.89.21
+
+      - name: Verify gh-aw version
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh aw --version 2>&1 | grep -Fx "gh aw version v0.89.21"
+
+      - name: Compile agentic workflows
+        run: gh aw compile --strict --no-check-update
+
+      - name: Check compiled workflows are fresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- .github/workflows
+
+  squad-install:
+    name: Squad installation integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Run Squad install verifier
+        run: node .github/workflows/shared/squad-install-verifier.mjs --verify-install
+
+      - name: Test Squad bootstrap transport
+        run: node --test .github/workflows/shared/squad-bootstrap-validator.test.mjs
+
+  protected-path-policy:
+    name: Protected path policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Test protected-path policy
+        run: node --test .github/scripts/protected-path-policy.test.mjs
+
+      - name: Collect changed paths
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          INPUT_BASE_SHA: ${{ inputs.base_sha || '' }}
+          INPUT_HEAD_SHA: ${{ inputs.head_sha || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_BASE_SHA" && -n "$INPUT_HEAD_SHA" ]]; then
+            git diff --name-only -z "$INPUT_BASE_SHA" "$INPUT_HEAD_SHA" > "$RUNNER_TEMP/changed-files"
+          elif [[ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            git ls-tree -r --name-only -z "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
+          else
+            git diff --name-only -z "$BEFORE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
+          fi
+
+      - name: Build protected-path policy event
+        id: policy-event
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ inputs.pr_number || '' }}
+          HEAD_REF: ${{ inputs.head_ref || '' }}
+          ACTOR_LOGIN: ${{ inputs.actor_login || '' }}
+          ACTOR_TYPE: ${{ inputs.actor_type || '' }}
+          LABELS_JSON: ${{ inputs.labels_json || '[]' }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "workflow_dispatch" || -z "$PR_NUMBER" ]]; then
+            echo "path=$GITHUB_EVENT_PATH" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -n \
+            --arg login "$ACTOR_LOGIN" \
+            --arg type "$ACTOR_TYPE" \
+            --arg head_ref "$HEAD_REF" \
+            --argjson labels "$LABELS_JSON" \
+            '{
+              event_name: "pull_request",
+              sender: {login: $login},
+              pull_request: {
+                user: {login: $login, type: $type},
+                head: {ref: $head_ref},
+                labels: ($labels | map({name: .}))
+              }
+            }' > "$RUNNER_TEMP/protected-path-event.json"
+          echo "path=$RUNNER_TEMP/protected-path-event.json" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce protected-path policy
+        run: >-
+          node .github/scripts/protected-path-policy.mjs
+          --event "${{ steps.policy-event.outputs.path }}"
+          --files0 "$RUNNER_TEMP/changed-files"

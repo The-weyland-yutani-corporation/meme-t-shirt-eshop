@@ -1,0 +1,228 @@
+name: Autonomous merge gate
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - Squad Review
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Optional pull request number; blank evaluates all eligible open PRs
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: autonomous-merge-gate-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Evaluate merge candidates
+    if: >-
+      github.event_name == 'workflow_run' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted gate implementation
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Evaluate and squash-merge eligible pull requests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          FACTORY_ALLOW_MERGE: ${{ vars.FACTORY_ALLOW_MERGE }}
+          FACTORY_KILL_SWITCH: ${{ vars.FACTORY_KILL_SWITCH }}
+          REQUESTED_PR: ${{ inputs.pr_number || '' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
+            const gate = await import(
+              pathToFileURL(
+                path.join(
+                  process.env.GITHUB_WORKSPACE,
+                  ".github",
+                  "scripts",
+                  "autonomous-merge-gate.mjs",
+                ),
+              ).href
+            );
+
+            if (process.env.FACTORY_ALLOW_MERGE !== "true") {
+              core.notice("FACTORY_ALLOW_MERGE is not exactly true; merge gate is disabled.");
+              return;
+            }
+            if (gate.isTruthy(process.env.FACTORY_KILL_SWITCH)) {
+              core.notice("FACTORY_KILL_SWITCH is truthy; merge gate is disabled.");
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const repository = `${owner}/${repo}`;
+            const targetBranch = "main";
+
+            async function allPages(method, parameters) {
+              return github.paginate(method, { ...parameters, per_page: 100 });
+            }
+
+            async function candidates() {
+              if (context.eventName === "workflow_run") {
+                const run = context.payload.workflow_run;
+                if (
+                  run.head_repository?.full_name !== repository ||
+                  !/^[0-9a-f]{40}$/.test(run.head_sha)
+                ) {
+                  core.notice("Completed run has no valid same-repository head.");
+                  return [];
+                }
+                return allPages(
+                  github.rest.repos.listPullRequestsAssociatedWithCommit,
+                  { owner, repo, commit_sha: run.head_sha },
+                ).then((pulls) =>
+                  pulls.filter((pull) => pull.head?.sha === run.head_sha),
+                );
+              }
+
+              const requested = process.env.REQUESTED_PR.trim();
+              if (requested) {
+                if (!/^[1-9][0-9]*$/.test(requested)) {
+                  throw new Error("pr_number must be a positive integer");
+                }
+                const { data } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: Number(requested),
+                });
+                return [data];
+              }
+              return allPages(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: "open",
+                base: targetBranch,
+              });
+            }
+
+            async function evidence(pull) {
+              const marker = gate.parseImplementationMarker(pull.body, pull.head.ref);
+              if (!marker.ok) return marker;
+
+              let issue;
+              try {
+                ({ data: issue } = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: marker.issue,
+                }));
+              } catch (error) {
+                if (error.status === 404) {
+                  return { ok: false, reason: "source issue does not exist in this repository" };
+                }
+                throw error;
+              }
+              const issueGate = gate.evaluateSourceIssue(issue);
+              if (!issueGate.ok) return issueGate;
+
+              const [reviews, checkRuns] = await Promise.all([
+                allPages(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                }),
+                allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                }),
+              ]);
+              const reviewGate = gate.evaluateSquadReview(reviews, pull.head.sha);
+              if (!reviewGate.ok) return reviewGate;
+              return gate.evaluateChecks(checkRuns);
+            }
+
+            const seen = new Set();
+            for (const candidate of await candidates()) {
+              if (seen.has(candidate.number)) continue;
+              seen.add(candidate.number);
+
+              if (!gate.isEligiblePullRequest(candidate, repository, targetBranch)) {
+                core.notice(`PR #${candidate.number}: not an eligible same-repository open PR.`);
+                continue;
+              }
+
+              let result = await evidence(candidate);
+              if (!result.ok) {
+                core.notice(`PR #${candidate.number}: ${result.reason}.`);
+                continue;
+              }
+
+              const { data: refreshed } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
+              if (
+                refreshed.head.sha !== candidate.head.sha ||
+                !gate.isEligiblePullRequest(refreshed, repository, targetBranch)
+              ) {
+                core.notice(`PR #${candidate.number}: pull request changed before final validation.`);
+                continue;
+              }
+
+              result = await evidence(refreshed);
+              if (!result.ok) {
+                core.notice(`PR #${candidate.number}: final validation failed: ${result.reason}.`);
+                continue;
+              }
+
+              const { data: finalPull } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
+              if (
+                finalPull.head.sha !== refreshed.head.sha ||
+                !gate.isEligiblePullRequest(finalPull, repository, targetBranch)
+              ) {
+                core.notice(`PR #${candidate.number}: head changed immediately before merge.`);
+                continue;
+              }
+
+              const { data: merge } = await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: candidate.number,
+                sha: finalPull.head.sha,
+                merge_method: "squash",
+              });
+              if (!merge.merged) {
+                throw new Error(`PR #${candidate.number} was not merged: ${merge.message}`);
+              }
+              core.notice(`Squash-merged PR #${candidate.number} at ${finalPull.head.sha}.`);
+
+              // GITHUB_TOKEN-authenticated merges suppress ordinary push-triggered
+              // workflows, so explicitly continue each bounded post-merge stage.
+              for (const workflow_id of ["factory-controller.lock.yml", "deploy.yml"]) {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id,
+                  ref: targetBranch,
+                });
+                core.notice(`Dispatched ${workflow_id} after PR #${candidate.number}.`);
+              }
+            }

@@ -156,7 +156,7 @@ pre-agent-steps:
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
       check_hash "$cast_validator" "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
-      check_hash "$bootstrap_validator" "9abc590bd7afb57f2da070df62c1b6a416d2f0a12cf7f39ad71399c57cfa7b8b"
+      check_hash "$bootstrap_validator" "853164fbd1ae02bfd9be075f5e94875fba44753130e20228e8e398b24db178f7"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --root "$PWD" \
@@ -180,17 +180,13 @@ safe-outputs:
       description: Create or recover the one deterministic Cast PR and one linked research-proposals issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
-      max: 1
+      max: 16
       output: Validated Squad bootstrap materialized.
       permissions:
         contents: write
         issues: write
         pull-requests: write
       inputs:
-        payload_encoding:
-          description: Fixed bootstrap payload encoding; must be base64.
-          required: true
-          type: string
         payload_byte_length:
           description: Canonical decimal UTF-8 byte length, at most 96000.
           required: true
@@ -203,37 +199,13 @@ safe-outputs:
           description: Canonical decimal count of populated chunks, from 1 through 16.
           required: true
           type: string
-        payload_chunk_00:
+        payload_chunk_index:
+          description: Zero-padded ordinal for this chunk, from 00 through 15.
+          required: true
           type: string
-        payload_chunk_01:
-          type: string
-        payload_chunk_02:
-          type: string
-        payload_chunk_03:
-          type: string
-        payload_chunk_04:
-          type: string
-        payload_chunk_05:
-          type: string
-        payload_chunk_06:
-          type: string
-        payload_chunk_07:
-          type: string
-        payload_chunk_08:
-          type: string
-        payload_chunk_09:
-          type: string
-        payload_chunk_10:
-          type: string
-        payload_chunk_11:
-          type: string
-        payload_chunk_12:
-          type: string
-        payload_chunk_13:
-          type: string
-        payload_chunk_14:
-          type: string
-        payload_chunk_15:
+        payload_chunk:
+          description: Ordinal-prefixed canonical Base64 for one deterministic payload chunk.
+          required: true
           type: string
       steps:
         - name: Checkout trusted default branch
@@ -250,6 +222,7 @@ safe-outputs:
             SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}
             SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
           with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
             script: |
               const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
               const { dirname, join } = await import('node:path');
@@ -268,14 +241,14 @@ safe-outputs:
               const items = (output.items || []).filter(
                 (item) => item.type === 'materialize_bootstrap',
               );
-              if (items.length !== 1) {
-                core.setFailed(`Expected exactly one materialize_bootstrap item, found ${items.length}.`);
+              if (items.length < 1 || items.length > 16) {
+                core.setFailed(`Expected 1 through 16 materialize_bootstrap chunk items, found ${items.length}.`);
                 return;
               }
               let payloadText;
               let payload;
               try {
-                payloadText = validatorModule.reconstructBootstrapPayload(items[0]);
+                payloadText = validatorModule.reconstructBootstrapChunkItems(items);
                 payload = JSON.parse(payloadText);
               } catch (error) {
                 core.setFailed(`Bootstrap payload transport is invalid: ${error.message}`);
@@ -721,16 +694,33 @@ Run exactly:
 ```
 
 Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes the following single shell
-command:
+`Squad bootstrap validation passed.` authorizes the following shell block:
 
 ```bash
-safeoutputs materialize_bootstrap "$(cat "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json")"
+envelope="${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json"
+count="$(jq -r '.payload_chunk_count' "$envelope")"
+for index in $(seq 0 $((count - 1))); do
+  ordinal="$(printf '%02d' "$index")"
+  field="payload_chunk_${ordinal}"
+  item="$(jq -c \
+    --arg ordinal "$ordinal" \
+    --arg field "$field" \
+    '{
+      payload_byte_length,
+      payload_sha256,
+      payload_chunk_count,
+      payload_chunk_index: $ordinal,
+      payload_chunk: .[$field]
+    }' "$envelope")"
+  safeoutputs materialize_bootstrap "$item"
+done
 ```
 
-Run that command exactly once. It passes the envelope JSON directly from disk
-to the typed safe-output CLI without reading, displaying, summarizing, or
-copying any envelope property or payload chunk through model context.
+Run that block exactly once. It passes one deterministic chunk item at a time
+directly from disk to the typed safe-output CLI without reading, displaying,
+summarizing, or copying any envelope property or payload chunk through model
+context. This avoids the aggregate safe-output item size ceiling while retaining
+the single validated payload contract.
 
 The envelope contains:
 
@@ -742,12 +732,13 @@ The envelope contains:
 
 Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
 payload bytes, so every string is at most 8,003 bytes and stays conservatively
-below gh-aw's 10,240-byte per-string input limit. The direct CLI call passes
-every property from the envelope byte-for-byte. Do not reserialize the payload,
-recompute metadata, rename slots, add unused slots, or split semantic generation
-into separate Cast and research outputs. The writer reconstructs the one shared
-payload and verifies order, count, bounds, UTF-8, total byte length, and SHA-256
-before parsing any JSON.
+below gh-aw's 10,240-byte per-string input limit. Each CLI call repeats the
+shared immutable metadata and transports exactly one chunk. Do not reserialize
+the payload, recompute metadata, rename slots, add unused slots, or split
+semantic generation into separate Cast and research outputs. The writer rejects
+missing, duplicate, reordered, truncated, or metadata-inconsistent chunk items,
+then reconstructs the one shared payload and verifies order, count, bounds,
+UTF-8, total byte length, and SHA-256 before parsing any JSON.
 
 Any validation or envelope error is terminal: emit no materialization output,
 report the exact validator or CLI stderr, and stop.

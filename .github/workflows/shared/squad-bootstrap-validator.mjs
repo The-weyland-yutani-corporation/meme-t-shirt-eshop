@@ -179,6 +179,46 @@ export function reconstructBootstrapPayload(envelope) {
   return payloadText;
 }
 
+export function reconstructBootstrapChunkItems(items) {
+  if (!Array.isArray(items) || items.length < 1 || items.length > PAYLOAD_MAX_CHUNKS) {
+    throw new Error(`Expected 1 through ${PAYLOAD_MAX_CHUNKS} bootstrap chunk items.`);
+  }
+
+  const metadata = items[0];
+  const chunkCount = parseBoundedDecimal(
+    metadata?.payload_chunk_count,
+    'payload_chunk_count',
+    { minimum: 1, maximum: PAYLOAD_MAX_CHUNKS },
+  );
+  if (items.length !== chunkCount) {
+    throw new Error('Bootstrap chunk item count does not match payload_chunk_count.');
+  }
+
+  const envelope = {
+    payload_encoding: 'base64',
+    payload_byte_length: metadata.payload_byte_length,
+    payload_sha256: metadata.payload_sha256,
+    payload_chunk_count: metadata.payload_chunk_count,
+  };
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    if (
+      item?.payload_byte_length !== metadata.payload_byte_length ||
+      item?.payload_sha256 !== metadata.payload_sha256 ||
+      item?.payload_chunk_count !== metadata.payload_chunk_count
+    ) {
+      throw new Error('Bootstrap chunk metadata is inconsistent across items.');
+    }
+
+    const ordinal = String(index).padStart(2, '0');
+    if (item.payload_chunk_index !== ordinal) {
+      throw new Error(`Bootstrap chunk item ${index} must have ordinal ${ordinal}.`);
+    }
+    envelope[chunkField(index)] = item.payload_chunk;
+  }
+  return reconstructBootstrapPayload(envelope);
+}
+
 function pullHead(pullRequest) {
   return pullRequest?.head?.ref ?? pullRequest?.headRefName ?? '';
 }
