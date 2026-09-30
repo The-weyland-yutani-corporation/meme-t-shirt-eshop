@@ -63,11 +63,11 @@ Scribe, Ralph, Rai, and Fact Checker are mandatory always-on support agents with
 
 **Routing hints (5):**
 
-- Roadmap & prioritization -> Lead
-- Storefront application features -> Storefront Engineer
-- Infrastructure & deployment -> Platform Engineer
-- Agentic workflow automation -> Automation Engineer
-- Testing & quality gates -> Quality Engineer
+- Roadmap & prioritization -> lead
+- Storefront application features -> storefront
+- Infrastructure & deployment -> platform
+- Agentic workflow automation -> automation
+- Testing & quality gates -> quality
 
 **Capability boundaries:** Each specialist stays within its charter's "What I Own" scope and defers cross-cutting or ambiguous work to Lead.
 <!-- SQUAD:TEAM-CAPABILITIES:END -->

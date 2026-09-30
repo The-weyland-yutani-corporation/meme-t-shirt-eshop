@@ -155,7 +155,7 @@ pre-agent-steps:
       }
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
-      check_hash "$cast_validator" "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
+      check_hash "$cast_validator" "2994c7a4831853f2cbf15446af27e17912345e54598b21137f3e968d1a2695da"
       check_hash "$bootstrap_validator" "853164fbd1ae02bfd9be075f5e94875fba44753130e20228e8e398b24db178f7"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
@@ -602,8 +602,8 @@ Generate the same final tree and formats as `/squad cast`:
 - `meet-the-squad.md`
 
 The registry contains active specialists only. The routing table uses the exact
-header `Work Type | Route To | Examples` and exact active `persistent_name`
-values. The team has separate `## Members` and `## Built-in Support Agents`
+header `Work Type | Route To | Examples` and exact active registry agent IDs.
+The team has separate `## Members` and `## Built-in Support Agents`
 sections. The coordinator has concrete Cast-source paths and one synchronized,
 nonzero Team Capabilities block. Remove bootstrap specialist directories not
 selected by this Cast, but never remove or rewrite the four built-ins.

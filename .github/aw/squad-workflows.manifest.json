@@ -14,7 +14,7 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "ca2e82cb354b3354424603b54128ec87fb5734e0aec8b8c999dbd1bee7807205"
+      "source_sha256": "487ad510223fae29667903a47e3ddee65fe3c6d331602ca61a66a54962359603"
     },
     {
       "name": "squad-implement-worker",
@@ -56,7 +56,7 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "2fa2d31454ca9af1c53030cbfee0c4c5507fd3c876207854753ad5abe15e47aa"
+      "source_sha256": "312d0027be02be79ccc20dffc60ed91a3e9b1fac9a72291f5661e72c4c524259"
     }
   ],
   "shared_runtime": [
@@ -74,7 +74,7 @@
       "package_destination": ".github/workflows/shared/squad-cast-validator.mjs",
       "destination": ".github/workflows/shared/squad-cast-validator.mjs",
       "ownership": "manifest",
-      "sha256": "6a2daf458c3a1ebcd1ed110beaf655422ec984637a5a3ccee97f67f650a7ee46"
+      "sha256": "2994c7a4831853f2cbf15446af27e17912345e54598b21137f3e968d1a2695da"
     },
     {
       "path": "shared/squad-bootstrap-validator.mjs",

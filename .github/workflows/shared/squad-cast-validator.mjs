@@ -194,7 +194,7 @@ function charterReferences(markdown) {
     .sort();
 }
 
-function parseRouting(routing, activeNames, errors) {
+function parseRouting(routing, activeIds, errors) {
   const headingMatches = routing.match(/^## Routing Table\s*$/gm) ?? [];
   if (headingMatches.length !== 1) {
     errors.push(`routing: expected exactly one "## Routing Table" heading, found ${headingMatches.length}`);
@@ -220,24 +220,24 @@ function parseRouting(routing, activeNames, errors) {
     errors.push('routing: at least one routing row is required');
   }
 
-  const routedNames = new Set();
+  const routedIds = new Set();
   for (const [workType, routeTo] of rows) {
     if (!workType || !routeTo) {
       errors.push('routing: work type and route target must be non-empty');
       continue;
     }
     for (const target of routeTo.split(',').map((value) => value.trim()).filter(Boolean)) {
-      if (!activeNames.has(target)) {
-        errors.push(`routing: target "${target}" is not an active registry persistent_name`);
+      if (!activeIds.has(target)) {
+        errors.push(`routing: target "${target}" is not an active registry agent ID`);
       } else {
-        routedNames.add(target);
+        routedIds.add(target);
       }
     }
   }
 
-  for (const name of activeNames) {
-    if (!routedNames.has(name)) {
-      errors.push(`routing: active member "${name}" has no route`);
+  for (const id of activeIds) {
+    if (!routedIds.has(id)) {
+      errors.push(`routing: active member "${id}" has no route`);
     }
   }
   return rows;
@@ -504,6 +504,12 @@ function committedRegistry(root, errors) {
   }
 }
 
+export function validateRoutingTargets(routing, activeIds) {
+  const errors = [];
+  parseRouting(routing, new Set(activeIds), errors);
+  return errors;
+}
+
 function parseRegistry(root, errors) {
   let registryRaw;
   let historyRaw;
@@ -634,7 +640,7 @@ export function validateCastTree({ root, payloadPath }) {
   }
 
   const active = parseRegistry(root, errors);
-  const activeNames = new Set(active.map(({ name }) => name));
+  const activeIds = new Set(active.map(({ id }) => id));
   const activeCharters = active.map(({ id }) => `.squad/agents/${id}/charter.md`);
   const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters, ...REQUIRED_BUILTIN_CHARTERS]);
   for (const path of payload) {
@@ -726,7 +732,7 @@ export function validateCastTree({ root, payloadPath }) {
   }
   extractSingleSection(coordinator, BUILTIN_SECTION_HEADING, 'coordinator', errors);
 
-  const routingRows = parseRouting(routing, activeNames, errors);
+  const routingRows = parseRouting(routing, activeIds, errors);
   validateCapabilities(coordinator, active, routingRows, errors);
 
   const outputReferences = [
