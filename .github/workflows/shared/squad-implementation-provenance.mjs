@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -312,6 +312,79 @@ function parseRecord(item) {
     return { ...item, goals, replaces };
   } catch {
     return null;
+  }
+}
+
+export function canonicalizeImplementationProvenanceItems({
+  items = [],
+  repository,
+  issueNumber,
+  runId,
+  requireLegacyMarker = false,
+} = {}) {
+  if (!Array.isArray(items) || !repositoryName(repository) ||
+      !numeric(issueNumber) || !numeric(runId)) return items;
+  const normalized = items.map(item =>
+    item && typeof item === 'object' && !Array.isArray(item) ? { ...item } : item);
+  for (const pull of normalized.filter(item => item?.type === 'create_pull_request')) {
+    const records = recordForPull(normalized, pull);
+    if (records.length !== 1) continue;
+    const record = records[0];
+    let proposed = [];
+    try {
+      const parsed = JSON.parse(record.goals_json);
+      if (Array.isArray(parsed)) proposed = parsed;
+    } catch {
+      proposed = [];
+    }
+    const primary = { repository, issue: issueNumber, relationship: 'closes' };
+    const goals = [primary];
+    const seen = new Set([`${repository}\0${issueNumber}\0closes`]);
+    for (const goal of proposed) {
+      if (!exactKeys(goal, GOAL_KEYS) || !repositoryName(goal.repository) ||
+          !numeric(goal.issue) || !['closes', 'relates'].includes(goal.relationship)) continue;
+      const key = `${goal.repository}\0${goal.issue}\0${goal.relationship}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        goals.push(goal);
+      }
+    }
+    record.goals_json = JSON.stringify(goals);
+
+    if (requireLegacyMarker) {
+      const body = normalizeText(pull.body).replace(/\n+$/, '');
+      if (!body.includes('<!-- squad:implement')) {
+        pull.body = `${body}\n\n<!-- squad:implement issue=${issueNumber} run=${runId} -->`;
+      }
+    }
+  }
+  return normalized;
+}
+
+export function canonicalizeImplementationProvenanceSafeOutputFile(env = process.env, {
+  directory = '/tmp/gh-aw',
+  agentOutputPath = env.GH_AW_AGENT_OUTPUT,
+} = {}) {
+  const path = agentOutputPath || join(directory, 'agent_output.json');
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    const items = Array.isArray(parsed) ? parsed : parsed?.items;
+    if (!Array.isArray(items)) return false;
+    const normalized = canonicalizeImplementationProvenanceItems({
+      items,
+      repository: env.GITHUB_REPOSITORY,
+      issueNumber: Number(env.SQUAD_IMPLEMENT_ISSUE_NUMBER),
+      runId: Number(env.GITHUB_RUN_ID),
+      requireLegacyMarker: env.SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER === 'true',
+    });
+    if (Array.isArray(parsed)) {
+      writeFileSync(path, JSON.stringify(normalized));
+    } else {
+      writeFileSync(path, JSON.stringify({ ...parsed, items: normalized }));
+    }
+    return true;
+  } catch {
+    return false;
   }
 }
 

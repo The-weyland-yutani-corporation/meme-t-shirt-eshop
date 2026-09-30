@@ -304,6 +304,7 @@ safe-outputs:
             trustedRoot,
             '.github/workflows/shared/squad-implementation-provenance.mjs',
           )).href);
+          implementationProvenance.canonicalizeImplementationProvenanceSafeOutputFile(process.env);
           const fetchJson = async (route, fields) =>
             (await github.request(`GET /${route}`, fields)).data;
           const provenanceResult =
@@ -1117,8 +1118,11 @@ Use the `create-pull-request` safe-output:
 - Durable provenance is not PR-body text. Give the `create_pull_request` call a
   unique `temporary_id`, then immediately call
   `record_implementation_provenance` with `pull_request` set to that temporary
-  ID, `goals_json` containing a JSON array with the primary closing goal plus
-  any other explicit goals, and `replaces_json` containing a JSON array of only
+  ID. For this run, `goals_json` MUST be the JSON string
+  `[{"repository":"${{ github.repository }}","issue":${{ github.event.inputs.issue_number }},"relationship":"closes"}]`;
+  it is an array of objects, never an array of prose strings. Add other explicit
+  goals only as objects with exactly `repository`, `issue`, and `relationship`
+  (`closes` or `relates`). `replaces_json` contains a JSON array of only
   verified earlier Squad PRs from this
   same repository, origin issue, and implementation session. The trusted
   handler runs after PR creation, resolves the actual PR number, re-fetches all
