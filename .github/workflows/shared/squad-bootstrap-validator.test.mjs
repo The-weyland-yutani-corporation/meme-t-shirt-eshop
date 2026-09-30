@@ -179,7 +179,6 @@ test('implementation worker permits application manifests without exposing gover
     assert.match(workflow, new RegExp(`      - ${governancePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }
 });
-
 test('trusted handler persists only a missing exact implementation marker', () => {
   assert.deepEqual(
     ensurePersistedLegacyMarker({
