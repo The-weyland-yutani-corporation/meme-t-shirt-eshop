@@ -9,6 +9,7 @@ import {
 import { validateRoutingTargets } from './squad-cast-validator.mjs';
 import {
   canonicalizeImplementationProvenanceItems,
+  ensurePersistedLegacyMarker,
   evaluateImplementationProvenanceItems,
 } from './squad-implementation-provenance.mjs';
 
@@ -177,4 +178,39 @@ test('implementation worker permits application manifests without exposing gover
   ]) {
     assert.match(workflow, new RegExp(`      - ${governancePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }
+});
+
+test('trusted handler persists only a missing exact implementation marker', () => {
+  assert.deepEqual(
+    ensurePersistedLegacyMarker({
+      body: 'Closes #15',
+      issueNumber: 15,
+      runId: 123,
+    }),
+    {
+      ok: true,
+      changed: true,
+      body: 'Closes #15\n\n<!-- squad:implement issue=15 run=123 -->',
+    },
+  );
+  assert.deepEqual(
+    ensurePersistedLegacyMarker({
+      body: 'Closes #15\n\n<!-- squad:implement issue=15 run=123 -->',
+      issueNumber: 15,
+      runId: 123,
+    }),
+    {
+      ok: true,
+      changed: false,
+      body: 'Closes #15\n\n<!-- squad:implement issue=15 run=123 -->',
+    },
+  );
+  assert.equal(
+    ensurePersistedLegacyMarker({
+      body: 'Closes #15\n\n<!-- squad:implement issue=16 run=123 -->',
+      issueNumber: 15,
+      runId: 123,
+    }).ok,
+    false,
+  );
 });
