@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   REQUIRED_CHECKS,
+  completePostMergeCleanup,
   evaluateChecks,
+  evaluatePostMergeCleanup,
   evaluateSourceIssue,
   evaluateSquadReview,
   isEligiblePullRequest,
@@ -32,10 +34,164 @@ test("rejects malformed, embedded, duplicated, and branch-mismatched markers", (
       "squad/implement-1-x",
     ],
     ["<!-- squad:implement issue=1 run=2 -->", "squad/implement-2-x"],
+    ["<!-- squad:implement issue=1 run=2 -->", "squad/implement-1/nested"],
   ];
   for (const [body, branch] of cases) {
     assert.equal(parseImplementationMarker(body, branch).ok, false);
   }
+});
+
+test("permits cleanup only for the exact same-repository implementation head", () => {
+  const pull = {
+    head: {
+      ref: "squad/implement-42-add-widget-deadbeef",
+      repo: { full_name: "owner/repo" },
+    },
+  };
+  assert.deepEqual(evaluatePostMergeCleanup(pull, "owner/repo", 42), {
+    ok: true,
+    issue: 42,
+    headRef: "squad/implement-42-add-widget-deadbeef",
+    gitRef: "heads/squad/implement-42-add-widget-deadbeef",
+  });
+  assert.equal(
+    evaluatePostMergeCleanup(
+      { ...pull, head: { ...pull.head, repo: { full_name: "fork/repo" } } },
+      "owner/repo",
+      42,
+    ).ok,
+    false,
+  );
+  assert.equal(evaluatePostMergeCleanup(pull, "owner/repo", 43).ok, false);
+  assert.equal(
+    evaluatePostMergeCleanup(
+      { ...pull, head: { ...pull.head, ref: "feature/42" } },
+      "owner/repo",
+      42,
+    ).ok,
+    false,
+  );
+});
+
+function cleanupGithub({
+  issueState = "open",
+  refExists = true,
+  issueUpdatePersists = true,
+  refDeletePersists = true,
+} = {}) {
+  const calls = [];
+  let state = issueState;
+  let exists = refExists;
+  return {
+    calls,
+    github: {
+      rest: {
+        issues: {
+          async get() {
+            calls.push("issues.get");
+            return { data: { state, labels: [{ name: "squad:builder" }] } };
+          },
+          async update({ state: nextState }) {
+            calls.push("issues.update");
+            if (issueUpdatePersists) state = nextState;
+            return { data: { state } };
+          },
+        },
+        git: {
+          async getRef({ ref }) {
+            calls.push(`git.getRef:${ref}`);
+            if (!exists) throw Object.assign(new Error("Not Found"), { status: 404 });
+            return { data: { ref: `refs/${ref}` } };
+          },
+          async deleteRef({ ref }) {
+            calls.push(`git.deleteRef:${ref}`);
+            if (refDeletePersists) exists = false;
+          },
+        },
+      },
+    },
+  };
+}
+
+test("closes the source issue and deletes the exact implementation head", async () => {
+  const mock = cleanupGithub();
+  const result = await completePostMergeCleanup({
+    github: mock.github,
+    owner: "owner",
+    repo: "repo",
+    repository: "owner/repo",
+    issueNumber: 42,
+    pull: {
+      head: {
+        ref: "squad/implement-42-add-widget-deadbeef",
+        repo: { full_name: "owner/repo" },
+      },
+    },
+  });
+  assert.equal(result.issueAlreadyClosed, false);
+  assert.equal(result.headAlreadyDeleted, false);
+  assert.equal(mock.calls.includes("issues.update"), true);
+  assert.equal(
+    mock.calls.includes(
+      "git.deleteRef:heads/squad/implement-42-add-widget-deadbeef",
+    ),
+    true,
+  );
+});
+
+test("treats already-closed issues and deleted heads as successful cleanup", async () => {
+  const mock = cleanupGithub({ issueState: "closed", refExists: false });
+  const result = await completePostMergeCleanup({
+    github: mock.github,
+    owner: "owner",
+    repo: "repo",
+    repository: "owner/repo",
+    issueNumber: 42,
+    pull: {
+      head: {
+        ref: "squad/implement-42-add-widget-deadbeef",
+        repo: { full_name: "owner/repo" },
+      },
+    },
+  });
+  assert.equal(result.issueAlreadyClosed, true);
+  assert.equal(result.headAlreadyDeleted, true);
+  assert.equal(mock.calls.includes("issues.update"), false);
+  assert.equal(
+    mock.calls.some((call) => call.startsWith("git.deleteRef:")),
+    false,
+  );
+});
+
+test("fails when either required post-merge condition is not achieved", async () => {
+  const pull = {
+    head: {
+      ref: "squad/implement-42-add-widget-deadbeef",
+      repo: { full_name: "owner/repo" },
+    },
+  };
+  const parameters = {
+    owner: "owner",
+    repo: "repo",
+    repository: "owner/repo",
+    issueNumber: 42,
+    pull,
+  };
+
+  await assert.rejects(
+    completePostMergeCleanup({
+      ...parameters,
+      github: cleanupGithub({ issueUpdatePersists: false }).github,
+    }),
+    /did not reach the closed state/,
+  );
+  await assert.rejects(
+    completePostMergeCleanup({
+      ...parameters,
+      github: cleanupGithub({ refDeletePersists: false }).github,
+    }),
+    /still exists/,
+  );
 });
 
 test("requires a bot COMMENT review for the exact current head", () => {

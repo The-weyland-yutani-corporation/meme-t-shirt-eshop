@@ -18,7 +18,7 @@ permissions:
   actions: write
   checks: read
   contents: write
-  issues: read
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -151,7 +151,10 @@ jobs:
               ]);
               const reviewGate = gate.evaluateSquadReview(reviews, pull.head.sha);
               if (!reviewGate.ok) return reviewGate;
-              return gate.evaluateChecks(checkRuns);
+              const checksGate = gate.evaluateChecks(checkRuns);
+              return checksGate.ok
+                ? { ...checksGate, issue: marker.issue }
+                : checksGate;
             }
 
             const seen = new Set();
@@ -213,6 +216,18 @@ jobs:
                 throw new Error(`PR #${candidate.number} was not merged: ${merge.message}`);
               }
               core.notice(`Squash-merged PR #${candidate.number} at ${finalPull.head.sha}.`);
+
+              const cleanup = await gate.completePostMergeCleanup({
+                github,
+                owner,
+                repo,
+                pull: finalPull,
+                repository,
+                issueNumber: result.issue,
+              });
+              core.notice(
+                `Closed issue #${cleanup.issue} and deleted implementation head ${cleanup.headRef}.`,
+              );
 
               // GITHUB_TOKEN-authenticated merges suppress ordinary push-triggered
               // workflows, so explicitly continue each bounded post-merge stage.
