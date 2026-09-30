@@ -16,4 +16,16 @@ This project uses **npm** (see `package-lock.json`).
 
 ## Health check
 
-`GET /api/health` returns `{ "status": "ok" }` and is used by the Azure App Service deployment workflow.
+`GET /api/health` returns `{ "status": "ok", "deploymentSha": "<sha>" }` and is used by the
+Azure App Service deployment workflow. The endpoint is unauthenticated and matches
+`infra/main.bicep`'s `healthCheckPath`.
+
+## Telemetry
+
+Application Insights is wired via `app/lib/telemetry.ts`. When the
+`APPLICATIONINSIGHTS_CONNECTION_STRING` app setting is present (provisioned by
+`infra/main.bicep`), server-side events — including each `/api/health` call — are
+tagged with a `deploymentSha` property resolved from `DEPLOYMENT_SHA`, `GITHUB_SHA`,
+`WEBSITE_SHA`, or Azure's `SCM_COMMIT_ID`, in that order, falling back to `"unknown"`.
+Telemetry calls are a no-op when no connection string is configured (e.g. local
+development).
