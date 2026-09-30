@@ -15,10 +15,11 @@ on:
         type: string
 
 permissions:
+  actions: write
   checks: read
   contents: write
   issues: read
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: autonomous-merge-gate-${{ github.repository }}
@@ -39,19 +40,6 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
-      - name: Mint dark factory App token
-        id: dark-factory-app
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-          private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
-          permission-actions: read
-          permission-checks: read
-          permission-contents: write
-          permission-issues: read
-          permission-metadata: read
-          permission-pull-requests: write
-
       - name: Evaluate and squash-merge eligible pull requests
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -59,7 +47,7 @@ jobs:
           FACTORY_KILL_SWITCH: ${{ vars.FACTORY_KILL_SWITCH }}
           REQUESTED_PR: ${{ inputs.pr_number || '' }}
         with:
-          github-token: ${{ steps.dark-factory-app.outputs.token }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const path = require("node:path");
             const { pathToFileURL } = require("node:url");
@@ -225,4 +213,16 @@ jobs:
                 throw new Error(`PR #${candidate.number} was not merged: ${merge.message}`);
               }
               core.notice(`Squash-merged PR #${candidate.number} at ${finalPull.head.sha}.`);
+
+              // GITHUB_TOKEN-authenticated merges suppress ordinary push-triggered
+              // workflows, so explicitly continue each bounded post-merge stage.
+              for (const workflow_id of ["factory-controller.lock.yml", "deploy.yml"]) {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id,
+                  ref: targetBranch,
+                });
+                core.notice(`Dispatched ${workflow_id} after PR #${candidate.number}.`);
+              }
             }

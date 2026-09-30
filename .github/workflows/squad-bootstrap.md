@@ -170,9 +170,6 @@ pre-agent-steps:
       SQUAD_BOOTSTRAP_VALIDATOR
       chmod 500 "$runner"
 safe-outputs:
-  github-app:
-    app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-    private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
   report-failed-jobs: false
   messages:
     run-success: 🤖 [{workflow_name}]({run_url}) finished. Review the linked draft Cast PR and research-proposals issue before activating work.
@@ -211,16 +208,6 @@ safe-outputs:
           required: true
           type: string
       steps:
-        - name: Mint dark factory App token
-          id: dark-factory-app
-          uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
-          with:
-            app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-            private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
-            permission-contents: write
-            permission-issues: write
-            permission-metadata: read
-            permission-pull-requests: write
         - name: Checkout trusted default branch
           uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
           with:
@@ -235,7 +222,7 @@ safe-outputs:
             SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}
             SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
           with:
-            github-token: ${{ steps.dark-factory-app.outputs.token }}
+            github-token: ${{ secrets.GITHUB_TOKEN }}
             script: |
               const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
               const { dirname, join } = await import('node:path');

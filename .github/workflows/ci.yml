@@ -5,6 +5,36 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number for an explicit GITHUB_TOKEN continuation
+        required: false
+        type: string
+      base_sha:
+        description: Validated pull request base SHA
+        required: false
+        type: string
+      head_sha:
+        description: Validated pull request head SHA
+        required: false
+        type: string
+      head_ref:
+        description: Validated pull request head ref
+        required: false
+        type: string
+      actor_login:
+        description: Pull request author login
+        required: false
+        type: string
+      actor_type:
+        description: Pull request author type
+        required: false
+        type: string
+      labels_json:
+        description: JSON array of pull request label names
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -85,37 +115,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Mint read-only dark factory App token
-        id: dark-factory-app
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-          private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
-          permission-actions: read
-          permission-checks: read
-          permission-contents: read
-          permission-issues: read
-          permission-metadata: read
-          permission-pull-requests: read
-
-      - name: Verify dark factory App installation
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.dark-factory-app.outputs.token }}
-          REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          test "$(gh api "repos/$REPOSITORY" --jq .full_name)" = "$REPOSITORY"
-          gh api installation/repositories --paginate --jq '.repositories[].full_name' |
-            grep -Fx "$REPOSITORY"
-          gh api "repos/$REPOSITORY/actions/workflows" --jq '.total_count' >/dev/null
-          gh api -H "Accept: application/vnd.github+json" \
-            "repos/$REPOSITORY/commits/$SHA/check-runs" --jq '.total_count' >/dev/null
-          gh api "repos/$REPOSITORY/issues?state=all&per_page=1" --jq 'length' >/dev/null
-          gh api "repos/$REPOSITORY/pulls?state=all&per_page=1" --jq 'length' >/dev/null
-          gh api "repos/$REPOSITORY/contents/.github/workflows" --jq 'length' >/dev/null
-
       - name: Check out repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -156,18 +155,54 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          INPUT_BASE_SHA: ${{ inputs.base_sha || '' }}
+          INPUT_HEAD_SHA: ${{ inputs.head_sha || '' }}
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_BASE_SHA" && -n "$INPUT_HEAD_SHA" ]]; then
+            git diff --name-only -z "$INPUT_BASE_SHA" "$INPUT_HEAD_SHA" > "$RUNNER_TEMP/changed-files"
           elif [[ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
             git ls-tree -r --name-only -z "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
           else
             git diff --name-only -z "$BEFORE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
           fi
 
+      - name: Build protected-path policy event
+        id: policy-event
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ inputs.pr_number || '' }}
+          HEAD_REF: ${{ inputs.head_ref || '' }}
+          ACTOR_LOGIN: ${{ inputs.actor_login || '' }}
+          ACTOR_TYPE: ${{ inputs.actor_type || '' }}
+          LABELS_JSON: ${{ inputs.labels_json || '[]' }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "workflow_dispatch" || -z "$PR_NUMBER" ]]; then
+            echo "path=$GITHUB_EVENT_PATH" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -n \
+            --arg login "$ACTOR_LOGIN" \
+            --arg type "$ACTOR_TYPE" \
+            --arg head_ref "$HEAD_REF" \
+            --argjson labels "$LABELS_JSON" \
+            '{
+              event_name: "pull_request",
+              sender: {login: $login},
+              pull_request: {
+                user: {login: $login, type: $type},
+                head: {ref: $head_ref},
+                labels: ($labels | map({name: .}))
+              }
+            }' > "$RUNNER_TEMP/protected-path-event.json"
+          echo "path=$RUNNER_TEMP/protected-path-event.json" >> "$GITHUB_OUTPUT"
+
       - name: Enforce protected-path policy
         run: >-
           node .github/scripts/protected-path-policy.mjs
-          --event "$GITHUB_EVENT_PATH"
+          --event "${{ steps.policy-event.outputs.path }}"
           --files0 "$RUNNER_TEMP/changed-files"

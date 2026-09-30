@@ -45,9 +45,6 @@ tools:
       - issues
       - repos
 safe-outputs:
-  github-app:
-    app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-    private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
   add-comment:
     max: 1
     target: ${{ github.event.inputs.issue_number || github.event.pull_request.number }}

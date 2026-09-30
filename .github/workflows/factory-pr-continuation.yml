@@ -1,0 +1,155 @@
+name: Factory PR continuation
+
+on:
+  workflow_run:
+    workflows:
+      - Squad Implement Worker
+      - Squad Dependency Worker
+    types:
+      - completed
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Optional pull request number to continue
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: factory-pr-continuation-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch missing PR validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch CI and Squad review for token-authored PRs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REQUESTED_PR: ${{ inputs.pr_number || '' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const repository = `${owner}/${repo}`;
+            const requiredChecks = [
+              "Application checks",
+              "GH-AW compiled workflow freshness",
+              "Squad installation integrity",
+              "Protected path policy",
+            ];
+
+            async function allPages(method, parameters) {
+              return github.paginate(method, { ...parameters, per_page: 100 });
+            }
+
+            async function candidates() {
+              const requested = process.env.REQUESTED_PR.trim();
+              if (requested) {
+                if (!/^[1-9][0-9]*$/.test(requested)) {
+                  throw new Error("pr_number must be a positive integer");
+                }
+                const { data } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: Number(requested),
+                });
+                return [data];
+              }
+              const pulls = await allPages(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: "open",
+                base: context.payload.repository.default_branch,
+              });
+              return pulls.filter((pull) =>
+                /^(?:squad\/implement-|squad\/deps-)/.test(pull.head.ref),
+              );
+            }
+
+            for (const pull of await candidates()) {
+              if (
+                pull.state !== "open" ||
+                pull.head.repo?.full_name !== repository ||
+                !/^[0-9a-f]{40}$/.test(pull.head.sha)
+              ) {
+                core.notice(`PR #${pull.number}: not a valid same-repository open PR.`);
+                continue;
+              }
+
+              const [checkRuns, reviews, reviewRuns] = await Promise.all([
+                allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                }),
+                allPages(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                }),
+                allPages(github.rest.actions.listWorkflowRuns, {
+                  owner,
+                  repo,
+                  workflow_id: "squad-review.lock.yml",
+                  event: "workflow_dispatch",
+                  branch: context.payload.repository.default_branch,
+                }),
+              ]);
+
+              const hasAnyRequiredCheck = checkRuns.some((run) =>
+                requiredChecks.includes(run.name),
+              );
+              if (!hasAnyRequiredCheck) {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id: "ci.yml",
+                  ref: pull.head.ref,
+                  inputs: {
+                    pr_number: String(pull.number),
+                    base_sha: pull.base.sha,
+                    head_sha: pull.head.sha,
+                    head_ref: pull.head.ref,
+                    actor_login: pull.user.login,
+                    actor_type: pull.user.type,
+                    labels_json: JSON.stringify(
+                      (pull.labels || []).map((label) => label.name),
+                    ),
+                  },
+                });
+                core.notice(`PR #${pull.number}: dispatched CI at ${pull.head.ref}.`);
+              }
+
+              const marker = `Squad-Review-Head: ${pull.head.sha}`;
+              const hasCurrentReview = reviews.some(
+                (review) =>
+                  review.user?.login === "github-actions[bot]" &&
+                  review.commit_id === pull.head.sha &&
+                  String(review.body || "").split(/\r?\n/).includes(marker),
+              );
+              const reviewInProgress = reviewRuns.some(
+                (run) =>
+                  ["queued", "in_progress", "requested", "waiting"].includes(run.status) &&
+                  String(run.display_title || "").includes(`PR #${pull.number}`),
+              );
+              if (!hasCurrentReview && !reviewInProgress) {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id: "squad-review.lock.yml",
+                  ref: context.payload.repository.default_branch,
+                  inputs: { issue_number: String(pull.number) },
+                });
+                core.notice(`PR #${pull.number}: dispatched Squad review.`);
+              }
+            }

@@ -54,9 +54,6 @@ pre-agent-steps:
       node "${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-improvement-gate.mjs" \
         --output "${GITHUB_WORKSPACE:?}/.github/workflows/squad-improvement-context.json"
 safe-outputs:
-  github-app:
-    app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-    private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
   steps:
     - name: Checkout trusted base for the improvement gate
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

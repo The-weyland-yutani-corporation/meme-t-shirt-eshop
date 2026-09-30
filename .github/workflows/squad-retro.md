@@ -7,9 +7,6 @@ engine:
 ambient-folders:
   - .squad
 safe-outputs:
-  github-app:
-    app-id: ${{ vars.DARK_FACTORY_MAGE_APP_ID }}
-    private-key: ${{ secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
   jobs:
     upsert-research-artifact:
       description: Create or replace the single Squad research artifact for this issue.
@@ -689,14 +686,6 @@ jobs:
             }
   activation:
     steps:
-      - name: Mint Squad GitHub App token
-        id: squad-app-token
-        if: ${{ vars.SQUAD_GITHUB_APP_ID != '' || vars.DARK_FACTORY_MAGE_APP_ID != '' }}
-        uses: actions/create-github-app-token@v3.2.0
-        with:
-          app-id: ${{ vars.SQUAD_GITHUB_APP_ID || vars.DARK_FACTORY_MAGE_APP_ID }}
-          private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY || secrets.DARK_FACTORY_MAGE_APP_PRIVATE_KEY }}
-          owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
       - name: Resolve Squad standalone release
         id: squad-release
         env:
@@ -721,7 +710,7 @@ jobs:
           skip-init: "true"
       - name: Initialize Squad team
         env:
-          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
           # roster entries, skip init to avoid overwriting a merged cast (#1657).
@@ -748,7 +737,7 @@ jobs:
           fi
       - name: Run Squad health check
         env:
-          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.SQUAD_GITHUB_TOKEN || github.token }}
           SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}
         run: |
           set -euo pipefail
