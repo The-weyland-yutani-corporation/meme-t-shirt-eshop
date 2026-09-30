@@ -351,6 +351,12 @@ export function canonicalizeImplementationProvenanceItems({
     }
     record.goals_json = JSON.stringify(goals);
 
+    const bodyLines = normalizeText(pull.body).split('\n');
+    pull.body = bodyLines
+      .filter(line => !/^[ \t]*Squad implementation provenance:[^\n]*[ \t]*$/.test(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n');
+
     if (requireLegacyMarker) {
       const body = normalizeText(pull.body).replace(/\n+$/, '');
       if (!body.includes('<!-- squad:implement')) {
