@@ -148,7 +148,11 @@ jobs:
                   repo,
                   workflow_id: "squad-review.lock.yml",
                   ref: context.payload.repository.default_branch,
-                  inputs: { issue_number: String(pull.number) },
+                  inputs: {
+                    issue_number: String(pull.number),
+                    expected_head_sha: pull.head.sha,
+                    request_origin: "manual",
+                  },
                 });
                 core.notice(`PR #${pull.number}: dispatched Squad review.`);
               }
