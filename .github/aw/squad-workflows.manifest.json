@@ -114,7 +114,7 @@
       "package_destination": ".github/workflows/shared/squad-implementation-provenance.mjs",
       "destination": ".github/workflows/shared/squad-implementation-provenance.mjs",
       "ownership": "manifest",
-      "sha256": "c3b6f2ec7edea0dbf93a769e9d5d9fc8f04e48cea1aff25ad3bde16f06127382"
+      "sha256": "24debee1eb59833cb5c11f0281b2332df831ee30bd6c8c8b053d6f6996800ef4"
     },
     {
       "path": "shared/squad.md",
