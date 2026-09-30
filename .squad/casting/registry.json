@@ -1,0 +1,53 @@
+{
+  "schema": "squad-agent-provenance/v1",
+  "schema_version": 1,
+  "revision": 1,
+  "generated_at": "2026-09-30T14:55:18Z",
+  "agents": {
+    "lead": {
+      "persistent_name": "Lead",
+      "display_name": "Lead",
+      "role": "Squad Lead",
+      "universe": "descriptive",
+      "status": "active",
+      "created_at": "2026-09-30T14:55:18Z",
+      "updated_at": "2026-09-30T14:55:18Z"
+    },
+    "storefront": {
+      "persistent_name": "Storefront Engineer",
+      "display_name": "Storefront Engineer",
+      "role": "Application Engineer",
+      "universe": "descriptive",
+      "status": "active",
+      "created_at": "2026-09-30T14:55:18Z",
+      "updated_at": "2026-09-30T14:55:18Z"
+    },
+    "platform": {
+      "persistent_name": "Platform Engineer",
+      "display_name": "Platform Engineer",
+      "role": "DevOps/Platform Engineer",
+      "universe": "descriptive",
+      "status": "active",
+      "created_at": "2026-09-30T14:55:18Z",
+      "updated_at": "2026-09-30T14:55:18Z"
+    },
+    "automation": {
+      "persistent_name": "Automation Engineer",
+      "display_name": "Automation Engineer",
+      "role": "Agentic Workflows Engineer",
+      "universe": "descriptive",
+      "status": "active",
+      "created_at": "2026-09-30T14:55:18Z",
+      "updated_at": "2026-09-30T14:55:18Z"
+    },
+    "quality": {
+      "persistent_name": "Quality Engineer",
+      "display_name": "Quality Engineer",
+      "role": "Test Engineer",
+      "universe": "descriptive",
+      "status": "active",
+      "created_at": "2026-09-30T14:55:18Z",
+      "updated_at": "2026-09-30T14:55:18Z"
+    }
+  }
+}
