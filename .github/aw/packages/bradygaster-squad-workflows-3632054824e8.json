@@ -8,7 +8,7 @@
     {
       "source": "workflows/squad-workflows.manifest.json",
       "destination": ".github/aw/squad-workflows.manifest.json",
-      "sha256": "9201714bd7973e3c51948c90f388912a64e19e0fd3e2408cca9a730aceae2d91"
+      "sha256": "63b4bdd8fa4a18bcf8c15f7240323b0d7f739e7d1fcb90cdb41751967b7c9c88"
     },
     {
       "source": "workflows/shared/builtins/fact-checker-charter.md",
@@ -98,7 +98,7 @@
     {
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
-      "sha256": "a0d676a6478a3d37651cb0279699494bded19b166c130cb395a6cf9bd963266e"
+      "sha256": "35ee63d0025530b90d42895c6388da4cf5c0c1de1ee875c2c790171e5463ae1e"
     },
     {
       "source": "workflows/package/squad-improvement-worker.md",
