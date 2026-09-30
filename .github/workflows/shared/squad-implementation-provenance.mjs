@@ -367,6 +367,33 @@ export function canonicalizeImplementationProvenanceItems({
   return normalized;
 }
 
+export function ensurePersistedLegacyMarker({
+  body,
+  issueNumber,
+  runId,
+} = {}) {
+  const normalizedBody = normalizeText(body);
+  if (!numeric(issueNumber) || !numeric(runId)) {
+    return { ok: false, changed: false, body: normalizedBody };
+  }
+  const marker = `<!-- squad:implement issue=${issueNumber} run=${runId} -->`;
+  const markerLikeCount = (normalizedBody.match(/<!-- squad:implement\b/g) || []).length;
+  if (markerLikeCount === 0) {
+    const trimmed = normalizedBody.replace(/\n+$/, '');
+    return {
+      ok: true,
+      changed: true,
+      body: `${trimmed}\n\n${marker}`,
+    };
+  }
+  const exactCount = normalizedBody.split('\n').filter(line => line === marker).length;
+  return {
+    ok: markerLikeCount === 1 && exactCount === 1,
+    changed: false,
+    body: normalizedBody,
+  };
+}
+
 export function canonicalizeImplementationProvenanceSafeOutputFile(env = process.env, {
   directory = '/tmp/gh-aw',
   agentOutputPath = env.GH_AW_AGENT_OUTPUT,
@@ -683,6 +710,7 @@ export async function emitImplementationProvenanceComment({
   env = process.env,
   fetchJson,
   createComment,
+  updatePullBody,
 }) {
   const identity = await validateWorkerIdentity(env, { fetchJson });
   if (!identity.ok) throw new Error(describeImplementationProvenanceViolations(identity.violations).join('; '));
@@ -694,7 +722,7 @@ export async function emitImplementationProvenanceComment({
   if (!resolved || resolved.repo !== identity.repository || !numeric(resolved.number)) {
     throw new Error('implementation-provenance-pull-reference-unresolved');
   }
-  const pull = await fetchJson(
+  let pull = await fetchJson(
     `repos/${identity.repository}/pulls/${resolved.number}`,
     {},
   );
@@ -702,6 +730,17 @@ export async function emitImplementationProvenanceComment({
       pull?.base?.repo?.full_name !== identity.repository ||
       typeof pull?.head?.ref !== 'string') {
     throw new Error('implementation-provenance-created-pull-untrusted');
+  }
+  if (env.SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER === 'true') {
+    const persistedMarker = ensurePersistedLegacyMarker({
+      body: pull.body,
+      issueNumber: identity.issueNumber,
+      runId: Number(env.GITHUB_RUN_ID),
+    });
+    if (persistedMarker.ok && persistedMarker.changed && updatePullBody) {
+      await updatePullBody(identity.repository, resolved.number, persistedMarker.body);
+      pull = { ...pull, body: persistedMarker.body };
+    }
   }
   const outputItems = items ?? (env.GH_AW_AGENT_OUTPUT
     ? readAgentOutputItems('', env.GH_AW_AGENT_OUTPUT)

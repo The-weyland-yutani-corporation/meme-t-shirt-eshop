@@ -382,6 +382,15 @@ safe-outputs:
               body,
             });
           },
+          updatePullBody: async (repository, pullNumber, body) => {
+            const [owner, repo] = repository.split('/');
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number: pullNumber,
+              body,
+            });
+          },
         });
   create-pull-request:
     title-prefix: "[squad] "

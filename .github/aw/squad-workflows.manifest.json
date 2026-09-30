@@ -21,7 +21,7 @@
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
       "lock": ".github/workflows/squad-implement-worker.lock.yml",
-      "source_sha256": "fbd099590746af8d61316ab8902ea19fd674210c229b68229b4080207e7314ff"
+      "source_sha256": "63b8725a59bbcb7d93c2f8085aad2321401a798f4246d8d5163d1ac431058f79"
     },
     {
       "name": "squad-review",
@@ -114,7 +114,7 @@
       "package_destination": ".github/workflows/shared/squad-implementation-provenance.mjs",
       "destination": ".github/workflows/shared/squad-implementation-provenance.mjs",
       "ownership": "manifest",
-      "sha256": "81b791401ef7079ab198f95a8dab3aeb3aec6851e59c98fdf71ad161215574b7"
+      "sha256": "c3b6f2ec7edea0dbf93a769e9d5d9fc8f04e48cea1aff25ad3bde16f06127382"
     },
     {
       "path": "shared/squad.md",
