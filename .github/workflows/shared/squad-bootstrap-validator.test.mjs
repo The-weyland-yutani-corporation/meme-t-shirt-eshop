@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -140,4 +141,40 @@ test('canonicalizes deterministic implementation provenance fields before valida
     }),
     { ok: true, enforced: true, violations: [] },
   );
+});
+
+test('implementation worker permits application manifests without exposing governance paths', () => {
+  const workflow = readFileSync(
+    new URL('../squad-implement-worker.md', import.meta.url),
+    'utf8',
+  );
+  const protectedFiles = workflow.match(
+    /    protected-files:\r?\n      policy: fallback-to-issue\r?\n      exclude:\r?\n(?<exclude>(?:        - .*\r?\n)+)    excluded-files:/,
+  );
+  assert.ok(protectedFiles, 'implementation protected-files policy must be present');
+
+  const exclusions = protectedFiles.groups.exclude
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*-\s*/, ''));
+  assert.deepEqual(exclusions, [
+    'README.md',
+    'package.json',
+    'package-lock.json',
+    'npm-shrinkwrap.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+    'Directory.Packages.props',
+    'go.mod',
+    'go.sum',
+  ]);
+
+  for (const governancePath of [
+    '.github/workflows/**',
+    '.github/agents/**',
+    '.github/aw/**',
+    '.squad/**',
+  ]) {
+    assert.match(workflow, new RegExp(`      - ${governancePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  }
 });

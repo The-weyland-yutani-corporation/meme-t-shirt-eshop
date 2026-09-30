@@ -509,6 +509,14 @@ safe-outputs:
       policy: fallback-to-issue
       exclude:
         - README.md
+        - package.json
+        - package-lock.json
+        - npm-shrinkwrap.json
+        - yarn.lock
+        - pnpm-lock.yaml
+        - Directory.Packages.props
+        - go.mod
+        - go.sum
     excluded-files:
       - .github/workflows/**
       - "**/.github/workflows/**"
