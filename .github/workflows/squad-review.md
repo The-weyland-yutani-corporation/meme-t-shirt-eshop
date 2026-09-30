@@ -4,6 +4,9 @@ run-name: "Squad review — PR #${{ github.event.inputs.issue_number || github.e
 description: Independently reviews agent-authored pull requests without editing or remediating
 private: false
 on:
+  bots:
+    - github-actions[bot]
+  roles: all
   workflow_dispatch:
     inputs:
       issue_number:
@@ -78,11 +81,12 @@ this workflow.
    If it is absent or not a positive integer, call `noop` and stop.
 2. Fetch the pull request from `${{ github.repository }}` and record its current
    40-character lowercase head SHA.
-3. For `workflow_dispatch`, require `request_origin` to equal `manual` and
-   `expected_head_sha` to equal the current head SHA. A missing, malformed, or
-   stale value, or a head repository other than `${{ github.repository }}`, is a
-   refusal: call `noop` and stop. This is the `/squad review` path relayed by
-   `workflows/squad.md`.
+3. For `workflow_dispatch`, require
+   `${{ github.event.inputs.request_origin }}` to equal `manual` and
+   `${{ github.event.inputs.expected_head_sha }}` to equal the current head SHA.
+   A missing, malformed, or stale value, or a head repository other than
+   `${{ github.repository }}`, is a refusal: call `noop` and stop. This is the
+   `/squad review` path relayed by `workflows/squad.md`.
 4. For `pull_request`, require the head repository to equal
    `${{ github.repository }}`. Forks and any event other than
    `ready_for_review` or `synchronize` are refused with `noop`.
