@@ -107,7 +107,7 @@ test('canonicalizes deterministic implementation provenance fields before valida
         temporary_id: 'aw_pr15',
         branch: 'squad/implement-15-nextjs-scaffold',
         title: 'Implement #15',
-        body: 'Closes #15',
+        body: 'Closes #15\n\nSquad implementation provenance: untrusted prose',
       },
       {
         type: 'record_implementation_provenance',
