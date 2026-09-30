@@ -6,6 +6,10 @@ import {
   reconstructBootstrapChunkItems,
 } from './squad-bootstrap-validator.mjs';
 import { validateRoutingTargets } from './squad-cast-validator.mjs';
+import {
+  canonicalizeImplementationProvenanceItems,
+  evaluateImplementationProvenanceItems,
+} from './squad-implementation-provenance.mjs';
 
 function chunkItems(payloadText) {
   const envelope = createBootstrapPayloadEnvelope(payloadText);
@@ -92,5 +96,48 @@ test('requires routing targets to use active registry agent IDs', () => {
       'routing: target "Storefront Engineer" is not an active registry agent ID',
       'routing: active member "storefront" has no route',
     ],
+  );
+});
+
+test('canonicalizes deterministic implementation provenance fields before validation', () => {
+  const items = canonicalizeImplementationProvenanceItems({
+    items: [
+      {
+        type: 'create_pull_request',
+        temporary_id: 'aw_pr15',
+        branch: 'squad/implement-15-nextjs-scaffold',
+        title: 'Implement #15',
+        body: 'Closes #15',
+      },
+      {
+        type: 'record_implementation_provenance',
+        pull_request: 'aw_pr15',
+        goals_json: '["Closes #15"]',
+        replaces_json: '[]',
+      },
+    ],
+    repository: 'owner/repo',
+    issueNumber: 15,
+    runId: 123,
+    requireLegacyMarker: true,
+  });
+  assert.equal(
+    items[0].body,
+    'Closes #15\n\n<!-- squad:implement issue=15 run=123 -->',
+  );
+  assert.equal(
+    items[1].goals_json,
+    '[{"repository":"owner/repo","issue":15,"relationship":"closes"}]',
+  );
+  assert.deepEqual(
+    evaluateImplementationProvenanceItems({
+      items,
+      repository: 'owner/repo',
+      issueNumber: 15,
+      namespace: 'implement',
+      runId: 123,
+      requireLegacyMarker: true,
+    }),
+    { ok: true, enforced: true, violations: [] },
   );
 });
