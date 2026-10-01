@@ -20,3 +20,10 @@ export {
 
 export { MockPrintProviderAdapter } from "./adapters/mock-adapter.ts";
 export type { MockPrintProviderAdapterOptions } from "./adapters/mock-adapter.ts";
+
+export {
+  CatalogConfigError,
+  loadCatalogConfig,
+  validateCatalogConfig,
+} from "./content/catalog-config.ts";
+export type { CatalogConfig } from "./content/catalog-config.ts";
