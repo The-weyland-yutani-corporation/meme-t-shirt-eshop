@@ -20,3 +20,10 @@ export {
 
 export { MockPrintProviderAdapter } from "./adapters/mock-adapter.ts";
 export type { MockPrintProviderAdapterOptions } from "./adapters/mock-adapter.ts";
+
+export { PrintfulAdapter, mapWebhookEventToOrderResult } from "./adapters/printful-adapter.ts";
+export type {
+  PrintfulAdapterOptions,
+  PrintfulWebhookEvent,
+  FetchLike,
+} from "./adapters/printful-adapter.ts";
