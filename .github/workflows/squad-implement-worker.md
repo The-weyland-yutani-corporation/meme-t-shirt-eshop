@@ -398,7 +398,7 @@ safe-outputs:
       - squad
     max: 1
     require-temporary-id: true
-    draft: true
+    draft: false
     allowed-base-branches:
       - squad/*
     allowed-branches:
@@ -924,8 +924,8 @@ continuation in mode 2, or from `squad-retro`'s bounded opt-in auto-dispatch for
 ordinary (non-proposal) `squad-retro-action` issues. The issue itself is always
 the authority: `Gather Context` below re-validates its state, dependencies, and
 any existing pull request regardless of who dispatched this run, and every pull
-request this worker opens is a draft (see `create-pull-request.draft` above)
-whether it came from `/squad implement` or from a retrospective.
+request this worker opens is ready for review (see `create-pull-request.draft`
+above) whether it came from `/squad implement` or from a retrospective.
 
 A retro-originated dispatch is the one case that also carries provenance,
 because it is the only caller that is itself automated. It sets
