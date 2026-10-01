@@ -3,6 +3,9 @@ name: Factory Controller
 run-name: Factory controller — ${{ github.event_name }}
 description: Bounded autonomous controller that advances opted-in factory goals through Squad
 on:
+  roles: all
+  bots:
+    - github-actions[bot]
   schedule:
     - cron: "*/30 * * * *"
   issues:

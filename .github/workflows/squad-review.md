@@ -131,8 +131,15 @@ machine-readable review marker is a standalone final line:
 
 If an existing review body contains the exact marker for the current head SHA,
 call `noop` and stop. Never re-review an unchanged head, including duplicate
-`synchronize` deliveries. Re-fetch the pull request immediately before emitting
-outputs; if its head SHA changed, call `noop` and let the newer run review it.
+`synchronize` deliveries. Deduplication is only by that exact current-head
+marker. A changed head SHA always requires a new review, including merge-only
+changes, content-equivalent changes, or changes with no pull-request-relevant
+blob differences. Never carry a prior-head review forward, compare prior and
+current heads for semantic or blob equivalence, or call `noop` because the
+current content appears equivalent to a previously reviewed head.
+
+Re-fetch the pull request immediately before emitting outputs; if its head SHA
+changed, call `noop` and let the newer run review it.
 
 ## Review procedure
 
