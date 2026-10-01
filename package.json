@@ -14,7 +14,8 @@
     "applicationinsights": "^3.16.0",
     "next": "16.3.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "stripe": "^17.7.0"
   },
   "devDependencies": {
     "@types/node": "^20",
