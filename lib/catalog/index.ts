@@ -20,3 +20,11 @@ export {
 
 export { MockPrintProviderAdapter } from "./adapters/mock-adapter.ts";
 export type { MockPrintProviderAdapterOptions } from "./adapters/mock-adapter.ts";
+
+export {
+  filterAndPaginateProducts,
+  listCategoryIds,
+  isProductInStock,
+  lowestPricedVariant,
+} from "./search.ts";
+export type { CatalogQuery, CatalogPage } from "./search.ts";
