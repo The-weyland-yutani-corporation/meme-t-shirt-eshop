@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { deploymentSha, trackEvent } from "@/app/lib/telemetry";
 
 export function GET() {
-  return NextResponse.json({ status: "ok" });
+  trackEvent("HealthCheck", { route: "/api/health" });
+
+  return NextResponse.json({ status: "ok", deploymentSha });
 }
