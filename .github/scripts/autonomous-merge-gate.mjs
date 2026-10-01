@@ -1,5 +1,7 @@
 const IMPLEMENT_MARKER =
   /^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$/;
+const IMPLEMENT_BRANCH =
+  /^squad\/implement-([1-9][0-9]*)-[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA = /^[0-9a-f]{40}$/;
 
 export const REQUIRED_CHECKS = Object.freeze([
@@ -32,11 +34,108 @@ export function parseImplementationMarker(body, headRef) {
 
   const issue = Number(matches[0][1]);
   const run = Number(matches[0][2]);
-  if (!String(headRef ?? "").startsWith(`squad/implement-${issue}-`)) {
+  const branch = String(headRef ?? "").match(IMPLEMENT_BRANCH);
+  if (!branch || Number(branch[1]) !== issue) {
     return { ok: false, reason: "implementation branch does not match marker issue" };
   }
 
   return { ok: true, issue, run };
+}
+
+export function evaluatePostMergeCleanup(pull, repository, issueNumber) {
+  if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
+    return { ok: false, reason: "invalid source issue for post-merge cleanup" };
+  }
+  if (pull?.head?.repo?.full_name !== repository) {
+    return { ok: false, reason: "refusing to delete a fork or cross-repository head" };
+  }
+
+  const headRef = String(pull?.head?.ref ?? "");
+  const branch = headRef.match(IMPLEMENT_BRANCH);
+  if (!branch || Number(branch[1]) !== issueNumber) {
+    return {
+      ok: false,
+      reason: "refusing to delete a non-matching implementation head",
+    };
+  }
+
+  return {
+    ok: true,
+    issue: issueNumber,
+    headRef,
+    gitRef: `heads/${headRef}`,
+  };
+}
+
+async function getExactRef(github, owner, repo, gitRef) {
+  try {
+    const { data } = await github.rest.git.getRef({ owner, repo, ref: gitRef });
+    if (data?.ref !== `refs/${gitRef}`) {
+      throw new Error(`GitHub returned an unexpected ref for ${gitRef}`);
+    }
+    return data;
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function completePostMergeCleanup({
+  github,
+  owner,
+  repo,
+  pull,
+  repository,
+  issueNumber,
+}) {
+  const target = evaluatePostMergeCleanup(pull, repository, issueNumber);
+  if (!target.ok) throw new Error(target.reason);
+
+  const { data: currentIssue } = await github.rest.issues.get({
+    owner,
+    repo,
+    issue_number: target.issue,
+  });
+  if (currentIssue?.pull_request || !["open", "closed"].includes(currentIssue?.state)) {
+    throw new Error(`Source #${target.issue} is no longer a closable issue`);
+  }
+
+  const issueAlreadyClosed = currentIssue.state === "closed";
+  if (!issueAlreadyClosed) {
+    await github.rest.issues.update({
+      owner,
+      repo,
+      issue_number: target.issue,
+      state: "closed",
+    });
+  }
+  const { data: confirmedIssue } = await github.rest.issues.get({
+    owner,
+    repo,
+    issue_number: target.issue,
+  });
+  if (confirmedIssue?.state !== "closed") {
+    throw new Error(`Source issue #${target.issue} did not reach the closed state`);
+  }
+
+  const existingRef = await getExactRef(github, owner, repo, target.gitRef);
+  const headAlreadyDeleted = existingRef === null;
+  if (!headAlreadyDeleted) {
+    try {
+      await github.rest.git.deleteRef({
+        owner,
+        repo,
+        ref: target.gitRef,
+      });
+    } catch (error) {
+      if (await getExactRef(github, owner, repo, target.gitRef)) throw error;
+    }
+  }
+  if (await getExactRef(github, owner, repo, target.gitRef)) {
+    throw new Error(`Implementation head ref ${target.headRef} still exists`);
+  }
+
+  return { ...target, issueAlreadyClosed, headAlreadyDeleted };
 }
 
 export function evaluateSquadReview(reviews, headSha) {
