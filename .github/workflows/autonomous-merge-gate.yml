@@ -1,4 +1,6 @@
 name: Autonomous merge gate
+run-name: >-
+  Autonomous merge gate — ${{ inputs.pr_number && format('PR #{0}', inputs.pr_number) || github.event_name }}
 
 on:
   workflow_run:
@@ -18,7 +20,7 @@ permissions:
   actions: write
   checks: read
   contents: write
-  issues: read
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -47,7 +49,7 @@ jobs:
           FACTORY_KILL_SWITCH: ${{ vars.FACTORY_KILL_SWITCH }}
           REQUESTED_PR: ${{ inputs.pr_number || '' }}
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const path = require("node:path");
             const { pathToFileURL } = require("node:url");
@@ -151,7 +153,10 @@ jobs:
               ]);
               const reviewGate = gate.evaluateSquadReview(reviews, pull.head.sha);
               if (!reviewGate.ok) return reviewGate;
-              return gate.evaluateChecks(checkRuns);
+              const checksGate = gate.evaluateChecks(checkRuns);
+              return checksGate.ok
+                ? { ...checksGate, issue: marker.issue }
+                : checksGate;
             }
 
             const seen = new Set();
@@ -189,18 +194,23 @@ jobs:
                 continue;
               }
 
-              const { data: finalPull } = await github.rest.pulls.get({
+              const branchUpdate = await gate.updateBehindPullRequest({
+                github,
                 owner,
                 repo,
-                pull_number: candidate.number,
+                repository,
+                defaultBranch: targetBranch,
+                pullNumber: candidate.number,
+                expectedHeadSha: refreshed.head.sha,
+                expectedIssue: result.issue,
               });
-              if (
-                finalPull.head.sha !== refreshed.head.sha ||
-                !gate.isEligiblePullRequest(finalPull, repository, targetBranch)
-              ) {
-                core.notice(`PR #${candidate.number}: head changed immediately before merge.`);
+              if (branchUpdate.updated) {
+                core.notice(
+                  `PR #${candidate.number}: requested update from ${refreshed.head.sha}; waiting for synchronize-triggered validation.`,
+                );
                 continue;
               }
+              const finalPull = branchUpdate.pull;
 
               const { data: merge } = await github.rest.pulls.merge({
                 owner,
@@ -213,6 +223,18 @@ jobs:
                 throw new Error(`PR #${candidate.number} was not merged: ${merge.message}`);
               }
               core.notice(`Squash-merged PR #${candidate.number} at ${finalPull.head.sha}.`);
+
+              const cleanup = await gate.completePostMergeCleanup({
+                github,
+                owner,
+                repo,
+                pull: finalPull,
+                repository,
+                issueNumber: result.issue,
+              });
+              core.notice(
+                `Closed issue #${cleanup.issue} and deleted implementation head ${cleanup.headRef}.`,
+              );
 
               // GITHUB_TOKEN-authenticated merges suppress ordinary push-triggered
               // workflows, so explicitly continue each bounded post-merge stage.
