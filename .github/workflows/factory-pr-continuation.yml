@@ -20,7 +20,7 @@ permissions:
   actions: write
   checks: read
   contents: read
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: factory-pr-continuation-${{ github.repository }}
@@ -32,6 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check out trusted continuation implementation
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
       - name: Dispatch CI and Squad review for token-authored PRs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -39,6 +45,19 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
+            const continuation = await import(
+              pathToFileURL(
+                path.join(
+                  process.env.GITHUB_WORKSPACE,
+                  ".github",
+                  "scripts",
+                  "factory-pr-continuation.mjs",
+                ),
+              ).href
+            );
+
             const { owner, repo } = context.repo;
             const repository = `${owner}/${repo}`;
             const requiredChecks = [
@@ -77,12 +96,12 @@ jobs:
             }
 
             for (const pull of await candidates()) {
-              if (
-                pull.state !== "open" ||
-                pull.head.repo?.full_name !== repository ||
-                !/^[0-9a-f]{40}$/.test(pull.head.sha)
-              ) {
-                core.notice(`PR #${pull.number}: not a valid same-repository open PR.`);
+              const candidate = continuation.evaluateContinuationPull(
+                pull,
+                repository,
+              );
+              if (!candidate.ok) {
+                core.notice(`PR #${pull.number}: ${candidate.reason}.`);
                 continue;
               }
 
@@ -156,4 +175,127 @@ jobs:
                 });
                 core.notice(`PR #${pull.number}: dispatched Squad review.`);
               }
+
+              if (!candidate.implementation) continue;
+
+              let promotion = continuation.evaluatePromotionEvidence(
+                pull,
+                repository,
+                checkRuns,
+                reviews,
+              );
+              if (!promotion.ok) {
+                core.notice(`PR #${pull.number}: not ready for promotion: ${promotion.reason}.`);
+                continue;
+              }
+
+              const { data: refreshed } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pull.number,
+              });
+              if (
+                refreshed.head.sha !== pull.head.sha ||
+                !continuation.evaluateContinuationPull(refreshed, repository).ok
+              ) {
+                core.notice(`PR #${pull.number}: pull request changed before promotion.`);
+                continue;
+              }
+
+              const [finalChecks, finalReviews] = await Promise.all([
+                allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: refreshed.head.sha,
+                }),
+                allPages(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: refreshed.number,
+                }),
+              ]);
+              promotion = continuation.evaluatePromotionEvidence(
+                refreshed,
+                repository,
+                finalChecks,
+                finalReviews,
+              );
+              if (!promotion.ok) {
+                core.notice(
+                  `PR #${pull.number}: final promotion validation failed: ${promotion.reason}.`,
+                );
+                continue;
+              }
+
+              if (refreshed.draft) {
+                const result = await github.graphql(
+                  `mutation MarkReady($pullRequestId: ID!) {
+                    markPullRequestReadyForReview(
+                      input: {pullRequestId: $pullRequestId}
+                    ) {
+                      pullRequest {
+                        headRefOid
+                        isDraft
+                      }
+                    }
+                  }`,
+                  { pullRequestId: refreshed.node_id },
+                );
+                const promoted = result.markPullRequestReadyForReview?.pullRequest;
+                if (
+                  promoted?.isDraft !== false ||
+                  promoted?.headRefOid !== refreshed.head.sha
+                ) {
+                  throw new Error(
+                    `PR #${pull.number} did not reach ready state at the validated head`,
+                  );
+                }
+                core.notice(`PR #${pull.number}: marked ready for review.`);
+              }
+
+              const { data: readyPull } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pull.number,
+              });
+              if (
+                readyPull.draft ||
+                readyPull.head.sha !== refreshed.head.sha ||
+                !continuation.evaluateContinuationPull(readyPull, repository).ok
+              ) {
+                throw new Error(
+                  `PR #${pull.number} failed ready-state postcondition validation`,
+                );
+              }
+
+              const mergeGateRuns = await allPages(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner,
+                  repo,
+                  workflow_id: "autonomous-merge-gate.yml",
+                  event: "workflow_dispatch",
+                  branch: context.payload.repository.default_branch,
+                },
+              );
+              if (
+                continuation.hasActiveMergeGateRun(
+                  mergeGateRuns,
+                  pull.number,
+                )
+              ) {
+                core.notice(
+                  `PR #${pull.number}: autonomous merge gate is already active.`,
+                );
+                continue;
+              }
+
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: "autonomous-merge-gate.yml",
+                ref: context.payload.repository.default_branch,
+                inputs: { pr_number: String(pull.number) },
+              });
+              core.notice(`PR #${pull.number}: dispatched autonomous merge gate.`);
             }

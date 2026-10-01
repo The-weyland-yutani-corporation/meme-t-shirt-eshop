@@ -1,4 +1,6 @@
 name: Autonomous merge gate
+run-name: >-
+  Autonomous merge gate — ${{ inputs.pr_number && format('PR #{0}', inputs.pr_number) || github.event_name }}
 
 on:
   workflow_run:
