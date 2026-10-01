@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // applicationinsights uses native/dynamic requires that should run as
+  // plain Node.js modules rather than being bundled by webpack/turbopack.
+  serverExternalPackages: ["applicationinsights"],
 };
 
 export default nextConfig;
