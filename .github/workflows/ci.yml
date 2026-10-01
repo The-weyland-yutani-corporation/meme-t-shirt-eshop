@@ -212,3 +212,86 @@ jobs:
           node .github/scripts/protected-path-policy.mjs
           --event "${{ steps.policy-event.outputs.path }}"
           --files0 "$RUNNER_TEMP/changed-files"
+
+  publish-dispatched-statuses:
+    name: Publish dispatched CI statuses
+    needs:
+      - application
+      - agentic-workflows
+      - squad-install
+      - protected-path-policy
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Check out trusted status bridge
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted-control-plane
+          persist-credentials: false
+
+      - name: Revalidate pull request and publish commit statuses
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+          INPUT_BASE_SHA: ${{ inputs.base_sha || '' }}
+          INPUT_HEAD_SHA: ${{ inputs.head_sha || '' }}
+          INPUT_HEAD_REF: ${{ inputs.head_ref || '' }}
+          INPUT_ACTOR_LOGIN: ${{ inputs.actor_login || '' }}
+          INPUT_ACTOR_TYPE: ${{ inputs.actor_type || '' }}
+          INPUT_LABELS_JSON: ${{ inputs.labels_json || '' }}
+          APPLICATION_RESULT: ${{ needs.application.result }}
+          AGENTIC_WORKFLOWS_RESULT: ${{ needs.agentic-workflows.result }}
+          SQUAD_INSTALL_RESULT: ${{ needs.squad-install.result }}
+          PROTECTED_PATH_POLICY_RESULT: ${{ needs.protected-path-policy.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
+            const bridge = await import(
+              pathToFileURL(
+                path.join(
+                  process.env.GITHUB_WORKSPACE,
+                  "trusted-control-plane",
+                  ".github",
+                  "scripts",
+                  "workflow-dispatch-status-bridge.mjs",
+                ),
+              ).href
+            );
+
+            const { owner, repo } = context.repo;
+            const result = await bridge.publishWorkflowDispatchStatuses({
+              github,
+              owner,
+              repo,
+              defaultBranch: context.payload.repository.default_branch,
+              runHeadSha: context.sha,
+              runId: context.runId,
+              serverUrl: process.env.GITHUB_SERVER_URL,
+              rawInputs: {
+                prNumber: process.env.INPUT_PR_NUMBER,
+                baseSha: process.env.INPUT_BASE_SHA,
+                headSha: process.env.INPUT_HEAD_SHA,
+                headRef: process.env.INPUT_HEAD_REF,
+                actorLogin: process.env.INPUT_ACTOR_LOGIN,
+                actorType: process.env.INPUT_ACTOR_TYPE,
+                labelsJson: process.env.INPUT_LABELS_JSON,
+              },
+              jobResults: {
+                application: process.env.APPLICATION_RESULT,
+                agenticWorkflows: process.env.AGENTIC_WORKFLOWS_RESULT,
+                squadInstall: process.env.SQUAD_INSTALL_RESULT,
+                protectedPathPolicy:
+                  process.env.PROTECTED_PATH_POLICY_RESULT,
+              },
+            });
+            core.notice(
+              `Published ${result.statuses.length} required statuses on ${result.headSha}.`,
+            );
