@@ -84,10 +84,14 @@ test('allows human bootstrap changes while requiring manual review', () => {
 test('protects the policy and CI control plane from self-modification', () => {
   const result = evaluatePolicy({
     event: pullRequest({ login: 'copilot-swe-agent[bot]', type: 'Bot' }),
-    files: ['.github/workflows/ci.yml', '.github/scripts/protected-path-policy.mjs'],
+    files: [
+      '.github/workflows/ci.yml',
+      '.github/scripts/protected-path-policy.mjs',
+      '.github/scripts/workflow-dispatch-status-bridge.mjs',
+    ],
   });
   assert.equal(result.allowed, false);
-  assert.equal(result.violations.length, 2);
+  assert.equal(result.violations.length, 3);
 });
 
 test('does not treat push events as autonomous pull requests', () => {
