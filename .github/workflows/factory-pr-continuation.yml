@@ -1,6 +1,9 @@
 name: Factory PR continuation
 
 on:
+  pull_request:
+    types:
+      - synchronize
   workflow_run:
     workflows:
       - Squad Implement Worker
@@ -72,6 +75,10 @@ jobs:
             }
 
             async function candidates() {
+              if (context.eventName === "pull_request") {
+                return [context.payload.pull_request];
+              }
+
               const requested = process.env.REQUESTED_PR.trim();
               if (requested) {
                 if (!/^[1-9][0-9]*$/.test(requested)) {

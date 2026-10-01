@@ -11,9 +11,11 @@ import {
   isEligiblePullRequest,
   isTruthy,
   parseImplementationMarker,
+  updateBehindPullRequest,
 } from "./autonomous-merge-gate.mjs";
 
 const sha = "a".repeat(40);
+const updatedSha = "b".repeat(40);
 
 test("accepts one standalone marker on its matching implementation branch", () => {
   assert.deepEqual(
@@ -276,10 +278,16 @@ test("validates source issues, pull request shape, and variable truthiness", () 
   assert.equal(
     isEligiblePullRequest(
       {
+        number: 42,
+        body: "<!-- squad:implement issue=42 run=9001 -->",
         state: "open",
         draft: false,
-        base: { ref: "main" },
-        head: { repo: { full_name: "owner/repo" } },
+        base: { ref: "main", repo: { full_name: "owner/repo" } },
+        head: {
+          ref: "squad/implement-42-add-widget",
+          sha,
+          repo: { full_name: "owner/repo" },
+        },
       },
       "owner/repo",
     ),
@@ -287,4 +295,162 @@ test("validates source issues, pull request shape, and variable truthiness", () 
   );
   assert.equal(isTruthy(" YES "), true);
   assert.equal(isTruthy("false"), false);
+});
+
+function updatePull(overrides = {}) {
+  return {
+    number: 42,
+    state: "open",
+    draft: false,
+    body: "<!-- squad:implement issue=42 run=9001 -->",
+    mergeable_state: "behind",
+    base: { ref: "main", repo: { full_name: "owner/repo" } },
+    head: {
+      ref: "squad/implement-42-add-widget",
+      sha,
+      repo: { full_name: "owner/repo" },
+    },
+    ...overrides,
+  };
+}
+
+function updateGithub(pulls, updateError) {
+  const calls = [];
+  const queue = [...pulls];
+  return {
+    calls,
+    github: {
+      rest: {
+        pulls: {
+          async get(parameters) {
+            calls.push(["get", parameters]);
+            return { data: queue.shift() ?? pulls.at(-1) };
+          },
+          async updateBranch(parameters) {
+            calls.push(["updateBranch", parameters]);
+            if (updateError) throw updateError;
+            return { status: 202, data: { message: "Updating pull request branch." } };
+          },
+        },
+      },
+    },
+  };
+}
+
+const updateParameters = {
+  owner: "owner",
+  repo: "repo",
+  repository: "owner/repo",
+  pullNumber: 42,
+  expectedHeadSha: sha,
+  expectedIssue: 42,
+  sleep: async () => {},
+};
+
+test("updates an exact same-repository behind implementation head", async () => {
+  const mock = updateGithub([
+    updatePull(),
+    updatePull({ head: { ...updatePull().head, sha: updatedSha } }),
+  ]);
+  const result = await updateBehindPullRequest({
+    ...updateParameters,
+    github: mock.github,
+  });
+
+  assert.equal(result.updated, true);
+  assert.equal(result.pull.head.sha, updatedSha);
+  assert.deepEqual(mock.calls[1], [
+    "updateBranch",
+    {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 42,
+      expected_head_sha: sha,
+    },
+  ]);
+});
+
+test("rejects fork heads before requesting a branch update", async () => {
+  const mock = updateGithub([
+    updatePull({
+      head: { ...updatePull().head, repo: { full_name: "fork/repo" } },
+    }),
+  ]);
+  await assert.rejects(
+    updateBehindPullRequest({ ...updateParameters, github: mock.github }),
+    /identity or eligibility changed/,
+  );
+  assert.equal(mock.calls.some(([name]) => name === "updateBranch"), false);
+});
+
+test("rejects a changed head before requesting a branch update", async () => {
+  const mock = updateGithub([
+    updatePull({ head: { ...updatePull().head, sha: updatedSha } }),
+  ]);
+  await assert.rejects(
+    updateBehindPullRequest({ ...updateParameters, github: mock.github }),
+    /head changed/,
+  );
+  assert.equal(mock.calls.some(([name]) => name === "updateBranch"), false);
+});
+
+test("returns the fresh pull unchanged when GitHub does not report behind", async () => {
+  const fresh = updatePull({ mergeable_state: "clean" });
+  const mock = updateGithub([fresh]);
+  const result = await updateBehindPullRequest({
+    ...updateParameters,
+    github: mock.github,
+  });
+
+  assert.deepEqual(result, { updated: false, pull: fresh });
+  assert.equal(mock.calls.some(([name]) => name === "updateBranch"), false);
+});
+
+test("fails on update API and postcondition failures", async () => {
+  const apiFailure = updateGithub(
+    [updatePull()],
+    Object.assign(new Error("server error"), { status: 500 }),
+  );
+  await assert.rejects(
+    updateBehindPullRequest({
+      ...updateParameters,
+      github: apiFailure.github,
+    }),
+    /server error/,
+  );
+
+  const stale = updateGithub([updatePull()]);
+  await assert.rejects(
+    updateBehindPullRequest({
+      ...updateParameters,
+      github: stale.github,
+      postconditionAttempts: 2,
+    }),
+    /head did not change/,
+  );
+});
+
+test("accepts a 422 race only after a re-fetch proves progress", async () => {
+  const progressed = updateGithub(
+    [
+      updatePull(),
+      updatePull({ head: { ...updatePull().head, sha: updatedSha } }),
+    ],
+    Object.assign(new Error("unprocessable"), { status: 422 }),
+  );
+  const result = await updateBehindPullRequest({
+    ...updateParameters,
+    github: progressed.github,
+  });
+  assert.equal(result.updated, true);
+  assert.equal(result.raced, true);
+
+  const stuck = updateGithub(
+    [updatePull()],
+    Object.assign(new Error("unprocessable"), { status: 422 }),
+  );
+  await assert.rejects(
+    updateBehindPullRequest({ ...updateParameters, github: stuck.github }),
+    /returned 422 and remains behind/,
+  );
 });
