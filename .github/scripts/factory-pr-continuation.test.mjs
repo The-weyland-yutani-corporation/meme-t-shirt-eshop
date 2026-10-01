@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { REQUIRED_CHECKS } from "./autonomous-merge-gate.mjs";
@@ -162,4 +163,18 @@ test("deduplicates only active merge-gate runs for the same pull request", () =>
     ),
     false,
   );
+});
+
+test("requires Squad review deduplication to use only the exact current head", () => {
+  const policy = readFileSync(
+    new URL("../workflows/squad-review.md", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    policy,
+    /Deduplication is only by that exact current-head\s+marker\./,
+  );
+  assert.match(policy, /A changed head SHA always requires a new review/);
+  assert.match(policy, /Never carry a prior-head review forward/);
+  assert.match(policy, /semantic or blob equivalence/);
 });

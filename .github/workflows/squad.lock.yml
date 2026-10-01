@@ -350,7 +350,6 @@ jobs:
           GH_AW_GITHUB_EVENT_INPUTS_COMMAND: ${{ github.event.inputs.command }}
           GH_AW_GITHUB_EVENT_INPUTS_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
           GH_AW_GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GH_AW_GITHUB_EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
           GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
           GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
           GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -374,10 +373,7 @@ jobs:
           GH_AW_ENGINE_ID: "copilot"
           GH_AW_GITHUB_EVENT_INPUTS_COMMAND: ${{ github.event.inputs.command }}
           GH_AW_GITHUB_EVENT_INPUTS_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
-          GH_AW_GITHUB_EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
           GH_AW_GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
         with:
           script: |
             const path = require('path');
@@ -398,7 +394,6 @@ jobs:
           GH_AW_GITHUB_EVENT_INPUTS_COMMAND: ${{ github.event.inputs.command }}
           GH_AW_GITHUB_EVENT_INPUTS_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
           GH_AW_GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GH_AW_GITHUB_EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
           GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
           GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
           GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -427,7 +422,6 @@ jobs:
                 GH_AW_GITHUB_EVENT_INPUTS_COMMAND: process.env.GH_AW_GITHUB_EVENT_INPUTS_COMMAND,
                 GH_AW_GITHUB_EVENT_INPUTS_ISSUE_NUMBER: process.env.GH_AW_GITHUB_EVENT_INPUTS_ISSUE_NUMBER,
                 GH_AW_GITHUB_EVENT_NAME: process.env.GH_AW_GITHUB_EVENT_NAME,
-                GH_AW_GITHUB_EVENT_REPOSITORY_ID: process.env.GH_AW_GITHUB_EVENT_REPOSITORY_ID,
                 GH_AW_GITHUB_REPOSITORY: process.env.GH_AW_GITHUB_REPOSITORY,
                 GH_AW_GITHUB_RUN_ID: process.env.GH_AW_GITHUB_RUN_ID,
                 GH_AW_GITHUB_WORKSPACE: process.env.GH_AW_GITHUB_WORKSPACE,
