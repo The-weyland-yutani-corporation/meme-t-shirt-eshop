@@ -204,6 +204,117 @@ export function isEligiblePullRequest(pull, repository, defaultBranch = "main") 
       pull.state === "open" &&
       pull.draft === false &&
       pull.base?.ref === defaultBranch &&
+      pull.base?.repo?.full_name === repository &&
       pull.head?.repo?.full_name === repository,
+  );
+}
+
+function updateIdentityGate(
+  pull,
+  repository,
+  defaultBranch,
+  pullNumber,
+  expectedHeadSha,
+  expectedIssue,
+) {
+  if (
+    pull?.number !== pullNumber ||
+    !isEligiblePullRequest(pull, repository, defaultBranch)
+  ) {
+    return { ok: false, reason: "pull request identity or eligibility changed" };
+  }
+  if (pull.head?.sha !== expectedHeadSha) {
+    return { ok: false, reason: "pull request head changed" };
+  }
+
+  const marker = parseImplementationMarker(pull.body, pull.head.ref);
+  if (!marker.ok || marker.issue !== expectedIssue) {
+    return { ok: false, reason: "implementation marker or branch identity changed" };
+  }
+
+  return { ok: true };
+}
+
+export async function updateBehindPullRequest({
+  github,
+  owner,
+  repo,
+  repository,
+  defaultBranch = "main",
+  pullNumber,
+  expectedHeadSha,
+  expectedIssue,
+  sleep = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  postconditionAttempts = 10,
+}) {
+  if (!SHA.test(String(expectedHeadSha ?? ""))) {
+    throw new Error("invalid expected head SHA for branch update");
+  }
+  if (
+    !Number.isSafeInteger(pullNumber) ||
+    pullNumber < 1 ||
+    !Number.isSafeInteger(expectedIssue) ||
+    expectedIssue < 1
+  ) {
+    throw new Error("invalid pull request or source issue for branch update");
+  }
+
+  const getPull = async () => {
+    const { data } = await github.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: pullNumber,
+    });
+    return data;
+  };
+
+  const fresh = await getPull();
+  const identity = updateIdentityGate(
+    fresh,
+    repository,
+    defaultBranch,
+    pullNumber,
+    expectedHeadSha,
+    expectedIssue,
+  );
+  if (!identity.ok) throw new Error(identity.reason);
+  if (fresh.mergeable_state !== "behind") {
+    return { updated: false, pull: fresh };
+  }
+
+  try {
+    await github.rest.pulls.updateBranch({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      expected_head_sha: expectedHeadSha,
+    });
+  } catch (error) {
+    if (error?.status !== 422) throw error;
+
+    const raced = await getPull();
+    if (
+      raced.head?.sha !== expectedHeadSha ||
+      raced.mergeable_state !== "behind"
+    ) {
+      return { updated: true, pull: raced, raced: true };
+    }
+    throw new Error(
+      `PR #${pullNumber} branch update returned 422 and remains behind at ${expectedHeadSha}`,
+      { cause: error },
+    );
+  }
+
+  for (let attempt = 0; attempt < postconditionAttempts; attempt += 1) {
+    if (attempt > 0) await sleep(1000);
+    const updated = await getPull();
+    if (updated.head?.sha !== expectedHeadSha) {
+      return { updated: true, pull: updated, raced: false };
+    }
+  }
+
+  throw new Error(
+    `PR #${pullNumber} branch update was accepted but the head did not change from ${expectedHeadSha}`,
   );
 }

@@ -49,7 +49,7 @@ jobs:
           FACTORY_KILL_SWITCH: ${{ vars.FACTORY_KILL_SWITCH }}
           REQUESTED_PR: ${{ inputs.pr_number || '' }}
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const path = require("node:path");
             const { pathToFileURL } = require("node:url");
@@ -194,18 +194,23 @@ jobs:
                 continue;
               }
 
-              const { data: finalPull } = await github.rest.pulls.get({
+              const branchUpdate = await gate.updateBehindPullRequest({
+                github,
                 owner,
                 repo,
-                pull_number: candidate.number,
+                repository,
+                defaultBranch: targetBranch,
+                pullNumber: candidate.number,
+                expectedHeadSha: refreshed.head.sha,
+                expectedIssue: result.issue,
               });
-              if (
-                finalPull.head.sha !== refreshed.head.sha ||
-                !gate.isEligiblePullRequest(finalPull, repository, targetBranch)
-              ) {
-                core.notice(`PR #${candidate.number}: head changed immediately before merge.`);
+              if (branchUpdate.updated) {
+                core.notice(
+                  `PR #${candidate.number}: requested update from ${refreshed.head.sha}; waiting for synchronize-triggered validation.`,
+                );
                 continue;
               }
+              const finalPull = branchUpdate.pull;
 
               const { data: merge } = await github.rest.pulls.merge({
                 owner,
