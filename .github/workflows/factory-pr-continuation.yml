@@ -20,7 +20,7 @@ permissions:
   actions: write
   checks: read
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
   group: factory-pr-continuation-${{ github.repository }}
@@ -178,14 +178,24 @@ jobs:
 
               if (!candidate.implementation) continue;
 
-              let promotion = continuation.evaluatePromotionEvidence(
+              if (pull.draft) {
+                core.notice(
+                  `PR #${pull.number}: legacy draft requires one-time operator migration; ` +
+                    "continuation will not attempt draft promotion.",
+                );
+                continue;
+              }
+
+              let mergeGateEvidence = continuation.evaluateMergeGateEvidence(
                 pull,
                 repository,
                 checkRuns,
                 reviews,
               );
-              if (!promotion.ok) {
-                core.notice(`PR #${pull.number}: not ready for promotion: ${promotion.reason}.`);
+              if (!mergeGateEvidence.ok) {
+                core.notice(
+                  `PR #${pull.number}: merge gate evidence incomplete: ${mergeGateEvidence.reason}.`,
+                );
                 continue;
               }
 
@@ -198,7 +208,9 @@ jobs:
                 refreshed.head.sha !== pull.head.sha ||
                 !continuation.evaluateContinuationPull(refreshed, repository).ok
               ) {
-                core.notice(`PR #${pull.number}: pull request changed before promotion.`);
+                core.notice(
+                  `PR #${pull.number}: pull request changed before final validation.`,
+                );
                 continue;
               }
 
@@ -214,58 +226,18 @@ jobs:
                   pull_number: refreshed.number,
                 }),
               ]);
-              promotion = continuation.evaluatePromotionEvidence(
+              mergeGateEvidence = continuation.evaluateMergeGateEvidence(
                 refreshed,
                 repository,
                 finalChecks,
                 finalReviews,
               );
-              if (!promotion.ok) {
+              if (!mergeGateEvidence.ok) {
                 core.notice(
-                  `PR #${pull.number}: final promotion validation failed: ${promotion.reason}.`,
+                  `PR #${pull.number}: final merge-gate validation failed: ` +
+                    `${mergeGateEvidence.reason}.`,
                 );
                 continue;
-              }
-
-              if (refreshed.draft) {
-                const result = await github.graphql(
-                  `mutation MarkReady($pullRequestId: ID!) {
-                    markPullRequestReadyForReview(
-                      input: {pullRequestId: $pullRequestId}
-                    ) {
-                      pullRequest {
-                        headRefOid
-                        isDraft
-                      }
-                    }
-                  }`,
-                  { pullRequestId: refreshed.node_id },
-                );
-                const promoted = result.markPullRequestReadyForReview?.pullRequest;
-                if (
-                  promoted?.isDraft !== false ||
-                  promoted?.headRefOid !== refreshed.head.sha
-                ) {
-                  throw new Error(
-                    `PR #${pull.number} did not reach ready state at the validated head`,
-                  );
-                }
-                core.notice(`PR #${pull.number}: marked ready for review.`);
-              }
-
-              const { data: readyPull } = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: pull.number,
-              });
-              if (
-                readyPull.draft ||
-                readyPull.head.sha !== refreshed.head.sha ||
-                !continuation.evaluateContinuationPull(readyPull, repository).ok
-              ) {
-                throw new Error(
-                  `PR #${pull.number} failed ready-state postcondition validation`,
-                );
               }
 
               const mergeGateRuns = await allPages(

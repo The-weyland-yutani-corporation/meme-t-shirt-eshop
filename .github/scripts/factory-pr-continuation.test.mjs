@@ -4,7 +4,7 @@ import test from "node:test";
 import { REQUIRED_CHECKS } from "./autonomous-merge-gate.mjs";
 import {
   evaluateContinuationPull,
-  evaluatePromotionEvidence,
+  evaluateMergeGateEvidence,
   hasActiveMergeGateRun,
 } from "./factory-pr-continuation.mjs";
 
@@ -14,7 +14,7 @@ const repository = "owner/repo";
 function pull(overrides = {}) {
   return {
     state: "open",
-    draft: true,
+    draft: false,
     head: {
       ref: "squad/implement-42-add-widget",
       sha,
@@ -70,9 +70,9 @@ test("classifies only same-repository open Squad continuation branches", () => {
   );
 });
 
-test("requires all successful current-head checks and a COMMENT Squad review", () => {
+test("requires a ready PR, successful current-head checks, and a COMMENT review", () => {
   assert.deepEqual(
-    evaluatePromotionEvidence(
+    evaluateMergeGateEvidence(
       pull(),
       repository,
       successfulChecks(),
@@ -80,8 +80,20 @@ test("requires all successful current-head checks and a COMMENT Squad review", (
     ),
     { ok: true },
   );
+  assert.deepEqual(
+    evaluateMergeGateEvidence(
+      pull({ draft: true }),
+      repository,
+      successfulChecks(),
+      [commentedReview()],
+    ),
+    {
+      ok: false,
+      reason: "legacy draft requires one-time operator migration",
+    },
+  );
   assert.equal(
-    evaluatePromotionEvidence(
+    evaluateMergeGateEvidence(
       pull(),
       repository,
       successfulChecks().slice(1),
@@ -90,7 +102,7 @@ test("requires all successful current-head checks and a COMMENT Squad review", (
     false,
   );
   assert.equal(
-    evaluatePromotionEvidence(
+    evaluateMergeGateEvidence(
       pull(),
       repository,
       successfulChecks(),
@@ -99,7 +111,7 @@ test("requires all successful current-head checks and a COMMENT Squad review", (
     false,
   );
   assert.equal(
-    evaluatePromotionEvidence(
+    evaluateMergeGateEvidence(
       pull(),
       repository,
       successfulChecks(),
@@ -112,12 +124,12 @@ test("requires all successful current-head checks and a COMMENT Squad review", (
   );
 });
 
-test("never promotes dependency branches", () => {
+test("never dispatches dependency branches to the merge gate", () => {
   const dependencyPull = pull({
     head: { ...pull().head, ref: "squad/deps-42-manifest" },
   });
   assert.equal(
-    evaluatePromotionEvidence(
+    evaluateMergeGateEvidence(
       dependencyPull,
       repository,
       successfulChecks(),

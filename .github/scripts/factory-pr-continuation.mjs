@@ -25,11 +25,20 @@ export function evaluateContinuationPull(pull, repository) {
   };
 }
 
-export function evaluatePromotionEvidence(pull, repository, checkRuns, reviews) {
+export function evaluateMergeGateEvidence(pull, repository, checkRuns, reviews) {
   const candidate = evaluateContinuationPull(pull, repository);
   if (!candidate.ok) return candidate;
   if (!candidate.implementation) {
-    return { ok: false, reason: "dependency PRs are not autonomously promoted" };
+    return {
+      ok: false,
+      reason: "dependency PRs do not enter the autonomous merge gate",
+    };
+  }
+  if (pull.draft) {
+    return {
+      ok: false,
+      reason: "legacy draft requires one-time operator migration",
+    };
   }
 
   const checks = evaluateChecks(checkRuns);

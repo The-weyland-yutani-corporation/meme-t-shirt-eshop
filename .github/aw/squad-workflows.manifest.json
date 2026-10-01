@@ -21,7 +21,7 @@
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
       "lock": ".github/workflows/squad-implement-worker.lock.yml",
-      "source_sha256": "63b8725a59bbcb7d93c2f8085aad2321401a798f4246d8d5163d1ac431058f79"
+      "source_sha256": "39c556b3b3aef5569cf0a8818719a983fdd7cf06c637af28218874aeeeb9b33b"
     },
     {
       "name": "squad-review",
