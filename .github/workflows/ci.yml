@@ -147,6 +147,12 @@ jobs:
       - name: Test protected-path policy
         run: node --test .github/scripts/protected-path-policy.test.mjs
 
+      - name: Test autonomous factory control plane
+        run: >-
+          node --test
+          .github/scripts/autonomous-merge-gate.test.mjs
+          .github/scripts/factory-pr-continuation.test.mjs
+
       - name: Collect changed paths
         id: changes
         shell: bash
