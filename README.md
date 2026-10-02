@@ -34,6 +34,14 @@ interface behavior.
 Azure App Service deployment workflow. The endpoint is unauthenticated and matches
 `infra/main.bicep`'s `healthCheckPath`.
 
+## Deployment
+
+`.github/workflows/deploy.yml` deploys successful `main` revisions to an
+Azure App Service staging slot, verifies health, swaps to production, verifies
+again, and automatically rolls back on regression. See `infra/README.md` for
+all operator-owned prerequisites, repository configuration, and kill switches
+(including `AZURE_DEPLOY_ENABLED`).
+
 ## Telemetry
 
 Application Insights is wired via `app/lib/telemetry.ts`. When the
