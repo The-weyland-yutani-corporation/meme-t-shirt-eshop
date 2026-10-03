@@ -1,0 +1,65 @@
+{
+  "categories": [
+    { "id": "t-shirts", "name": "T-Shirts" },
+    { "id": "hoodies", "name": "Hoodies" }
+  ],
+  "tags": [
+    { "id": "bestseller", "label": "Bestseller" },
+    { "id": "limited-edition", "label": "Limited Edition" }
+  ],
+  "products": [
+    {
+      "id": "classic-meme-tee",
+      "name": "Classic Meme Tee",
+      "description": "A soft-cotton unisex tee with a classic meme print.",
+      "categoryId": "t-shirts",
+      "tagIds": ["bestseller"],
+      "images": ["/images/classic-meme-tee-front.png"],
+      "variants": [
+        {
+          "id": "classic-meme-tee-s-black",
+          "productId": "classic-meme-tee",
+          "name": "Black / S",
+          "size": "S",
+          "color": "Black",
+          "priceCents": 2499,
+          "currency": "USD",
+          "providerVariantId": "pf-1001",
+          "isAvailable": true
+        },
+        {
+          "id": "classic-meme-tee-m-black",
+          "productId": "classic-meme-tee",
+          "name": "Black / M",
+          "size": "M",
+          "color": "Black",
+          "priceCents": 2499,
+          "currency": "USD",
+          "providerVariantId": "pf-1002",
+          "isAvailable": true
+        }
+      ]
+    },
+    {
+      "id": "limited-drop-hoodie",
+      "name": "Limited Drop Hoodie",
+      "description": "Heavyweight hoodie from a limited seasonal drop.",
+      "categoryId": "hoodies",
+      "tagIds": ["limited-edition"],
+      "images": ["/images/limited-drop-hoodie-front.png"],
+      "variants": [
+        {
+          "id": "limited-drop-hoodie-l-grey",
+          "productId": "limited-drop-hoodie",
+          "name": "Grey / L",
+          "size": "L",
+          "color": "Grey",
+          "priceCents": 5499,
+          "currency": "USD",
+          "providerVariantId": "pf-2001",
+          "isAvailable": false
+        }
+      ]
+    }
+  ]
+}

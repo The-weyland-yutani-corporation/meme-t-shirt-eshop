@@ -35,3 +35,10 @@ export type {
   PrintfulWebhookEvent,
   FetchLike,
 } from "./adapters/printful-adapter.ts";
+
+export {
+  CatalogConfigError,
+  loadCatalogConfig,
+  validateCatalogConfig,
+} from "./content/catalog-config.ts";
+export type { CatalogConfig } from "./content/catalog-config.ts";
