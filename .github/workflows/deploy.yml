@@ -162,18 +162,24 @@ jobs:
         run: npm run build
 
       - name: Create deployment package
+        id: package-layout
         shell: bash
         run: |
           set -euo pipefail
           rm -rf .deployment
-          mkdir -p .deployment/app
-          cp -a .next/standalone/. .deployment/app/
-          jq '.scripts = (.scripts // {}) | .scripts.start = "node server.js"' \
-            .deployment/app/package.json > .deployment/app/package.tmp.json
-          mv .deployment/app/package.tmp.json .deployment/app/package.json
-          mkdir -p .deployment/app/.next
-          cp -a .next/static .deployment/app/.next/static
-          [[ ! -d public ]] || cp -a public .deployment/app/public
+          node .github/scripts/deployment-package.mjs detect --source .
+
+      - name: Prune development dependencies for next-start package
+        if: ${{ steps.package-layout.outputs.mode == 'next-start' }}
+        run: npm prune --omit=dev
+
+      - name: Assemble and archive deployment package
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/deployment-package.mjs create \
+            --source . \
+            --destination .deployment/app
           cd .deployment/app
           zip -q -r ../app.zip .
 
