@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { lstat, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   createDeploymentLayout,
   detectPackageMode,
 } from "./deployment-package.mjs";
+
+const execFileAsync = promisify(execFile);
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "deployment-package-"));
@@ -78,9 +82,59 @@ test("packages this repository's next-start layout with production dependencies"
   );
   assert.equal(
     JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).scripts.start,
-    "next start",
+    "node node_modules/next/dist/bin/next start",
   );
   await assert.rejects(readFile(path.join(destination, ".env"), "utf8"), /ENOENT/);
+});
+
+test("next-start package launches without node_modules/.bin symlink semantics", async (t) => {
+  const { root, source, destination } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await put(
+    source,
+    "package.json",
+    JSON.stringify({ scripts: { start: "next start" } }),
+  );
+  await put(source, ".next/BUILD_ID", "build-id");
+  await put(source, "node_modules/next/package.json", "{}");
+  await put(
+    source,
+    "node_modules/next/dist/bin/next",
+    'require("../server/require-hook"); process.stdout.write("direct-next-entrypoint\\n");',
+  );
+  await put(
+    source,
+    "node_modules/next/dist/server/require-hook.js",
+    "module.exports = {};",
+  );
+  await put(
+    source,
+    "node_modules/.bin/next",
+    'require("../server/require-hook");',
+  );
+
+  await createDeploymentLayout({
+    sourceDirectory: source,
+    destinationDirectory: destination,
+  });
+
+  assert.equal(
+    (await lstat(path.join(destination, "node_modules/.bin/next"))).isSymbolicLink(),
+    false,
+  );
+  const packageJson = JSON.parse(
+    await readFile(path.join(destination, "package.json"), "utf8"),
+  );
+  assert.equal(
+    packageJson.scripts.start,
+    "node node_modules/next/dist/bin/next start",
+  );
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["node_modules/next/dist/bin/next", "start"],
+    { cwd: destination },
+  );
+  assert.equal(stdout, "direct-next-entrypoint\n");
 });
 
 test("fails closed when no complete deployable layout exists", async (t) => {
