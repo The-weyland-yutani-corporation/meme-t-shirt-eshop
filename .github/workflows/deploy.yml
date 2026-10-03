@@ -6,10 +6,22 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Validate only, or deploy when the kill switch is enabled
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - deploy
+      deployment_sha:
+        description: Exact current main SHA to deploy
+        required: true
+        type: string
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: azure-app-service-production
@@ -21,36 +33,133 @@ env:
   HEALTH_PATH: ${{ vars.AZURE_HEALTH_PATH || '/api/health' }}
 
 jobs:
-  build:
+  resolve:
+    name: Resolve exact deployment
     if: >-
-      vars.AZURE_DEPLOY_ENABLED == 'true' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'))
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.operation == 'preflight' || vars.AZURE_DEPLOY_ENABLED == 'true')) ||
+      (github.event_name == 'workflow_run' &&
+       vars.AZURE_DEPLOY_ENABLED == 'true' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      deployment_sha: ${{ steps.resolve.outputs.deployment_sha }}
+      operation: ${{ steps.resolve.outputs.operation }}
     steps:
-      - name: Check out the successful revision
+      - name: Check out trusted deployment controls
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
-      - name: Set up Node.js
-        if: ${{ hashFiles('package.json') != '' }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-
-      - name: Build Next.js application
-        if: ${{ hashFiles('package.json') != '' }}
+      - name: Resolve and validate current main SHA
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DISPATCH_SHA: ${{ inputs.deployment_sha || '' }}
+          OPERATION: ${{ inputs.operation || 'deploy' }}
+          DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f package-lock.json ]]; then
-            npm ci
-          else
-            npm install
-          fi
-          npm run build
+          current_sha="$(
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          node .github/scripts/deployment-control.mjs resolve \
+            --event "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --dispatch-sha "$DISPATCH_SHA" \
+            --operation "$OPERATION" \
+            --deploy-enabled "$DEPLOY_ENABLED" \
+            --current-default-sha "$current_sha"
+
+  record-deployment:
+    name: Create durable GitHub deployment
+    needs: resolve
+    if: ${{ needs.resolve.outputs.operation == 'deploy' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: write
+    outputs:
+      deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+    steps:
+      - name: Create queued deployment evidence
+        id: deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg ref "$DEPLOYMENT_SHA" \
+            --arg description "Azure App Service deployment from workflow run $GITHUB_RUN_ID" \
+            '{
+              ref: $ref,
+              environment: "production",
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: false,
+              production_environment: true,
+              description: $description
+            }' > "$RUNNER_TEMP/deployment.json"
+          deployment_id="$(
+            gh api \
+              --method POST \
+              "repos/$GITHUB_REPOSITORY/deployments" \
+              --input "$RUNNER_TEMP/deployment.json" \
+              --jq '.id'
+          )"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+
+          jq -n \
+            --arg state "queued" \
+            --arg log_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg description "Exact deployment SHA accepted; build queued" \
+            '{state: $state, log_url: $log_url, description: $description}' \
+            > "$RUNNER_TEMP/deployment-status.json"
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses" \
+            --input "$RUNNER_TEMP/deployment-status.json" \
+            --silent
+
+  build:
+    name: Build deployment package
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact deployment SHA
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ needs.resolve.outputs.deployment_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js application
+        env:
+          DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+        run: npm run build
 
       - name: Create deployment package
         shell: bash
@@ -58,152 +167,288 @@ jobs:
           set -euo pipefail
           rm -rf .deployment
           mkdir -p .deployment/app
-
-          if [[ -f package.json && -d .next/standalone ]]; then
-            cp -a .next/standalone/. .deployment/app/
-            jq '.scripts = (.scripts // {}) | .scripts.start = "node server.js"' \
-              .deployment/app/package.json > .deployment/app/package.tmp.json
-            mv .deployment/app/package.tmp.json .deployment/app/package.json
-            mkdir -p .deployment/app/.next
-            cp -a .next/static .deployment/app/.next/static
-            [[ ! -d public ]] || cp -a public .deployment/app/public
-          elif [[ -f package.json ]]; then
-            npm prune --omit=dev
-            cp package.json .deployment/app/
-            [[ ! -f package-lock.json ]] || cp package-lock.json .deployment/app/
-            [[ ! -d .next ]] || cp -a .next .deployment/app/.next
-            [[ ! -d public ]] || cp -a public .deployment/app/public
-            cp -a node_modules .deployment/app/node_modules
-            for config in next.config.js next.config.mjs next.config.ts; do
-              [[ ! -f "$config" ]] || cp "$config" .deployment/app/
-            done
-          else
-            echo "No package.json found; packaging repository content."
-            tar \
-              --exclude=.git \
-              --exclude=.github \
-              --exclude=infra \
-              --exclude=.deployment \
-              -cf - . | tar -xf - -C .deployment/app
-          fi
-
+          cp -a .next/standalone/. .deployment/app/
+          jq '.scripts = (.scripts // {}) | .scripts.start = "node server.js"' \
+            .deployment/app/package.json > .deployment/app/package.tmp.json
+          mv .deployment/app/package.tmp.json .deployment/app/package.json
+          mkdir -p .deployment/app/.next
+          cp -a .next/static .deployment/app/.next/static
+          [[ ! -d public ]] || cp -a public .deployment/app/public
           cd .deployment/app
           zip -q -r ../app.zip .
 
       - name: Upload deployment package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: app-package
+          name: app-package-${{ needs.resolve.outputs.deployment_sha }}
           path: .deployment/app.zip
           if-no-files-found: error
           retention-days: 1
 
-  deploy-staging:
-    needs: build
+  deploy:
+    name: Verify, swap, and verify rollback
+    needs:
+      - resolve
+      - build
+      - record-deployment
     runs-on: ubuntu-latest
-    environment: staging
+    timeout-minutes: 15
+    environment: production
+    if: ${{ needs.resolve.outputs.operation == 'deploy' }}
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
     steps:
-      - name: Check out the successful revision
+      - name: Check out exact deployment controls
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.resolve.outputs.deployment_sha }}
+          persist-credentials: false
+
+      - name: Validate required configuration
+        env:
+          STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_APP_NAME STAGING_URL PRODUCTION_URL; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is not configured"; exit 1; }
+          done
+          [[ "$HEALTH_PATH" == /* ]] || {
+            echo "::error::AZURE_HEALTH_PATH must start with /"
+            exit 1
+          }
+
+      - name: Mark GitHub deployment in progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ needs.record-deployment.outputs.deployment_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg state "in_progress" \
+            --arg log_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg description "Validating staging before an Azure slot swap" \
+            '{state: $state, log_url: $log_url, description: $description}' \
+            > "$RUNNER_TEMP/deployment-status.json"
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" \
+            --input "$RUNNER_TEMP/deployment-status.json" \
+            --silent
+
+      - name: Inspect current production deployment
+        id: production
+        env:
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+          DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+        run: >-
+          node .github/scripts/deployment-control.mjs inspect
+          --base-url "$PRODUCTION_URL"
+          --health-path "$HEALTH_PATH"
+          --expected-sha "$DEPLOYMENT_SHA"
 
       - name: Download deployment package
+        if: ${{ steps.production.outputs.already_deployed != 'true' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: app-package
+          name: app-package-${{ needs.resolve.outputs.deployment_sha }}
 
       - name: Sign in to Azure with OIDC
+        if: ${{ steps.production.outputs.already_deployed != 'true' }}
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate required configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          for name in AZURE_RESOURCE_GROUP AZURE_APP_NAME; do
-            [[ -n "${!name:-}" ]] || { echo "::error::$name is not configured"; exit 1; }
-          done
-          [[ -n "${{ vars.AZURE_STAGING_URL }}" ]] || { echo "::error::AZURE_STAGING_URL is not configured"; exit 1; }
-          [[ -n "${{ vars.AZURE_PRODUCTION_URL }}" ]] || { echo "::error::AZURE_PRODUCTION_URL is not configured"; exit 1; }
-          [[ "$HEALTH_PATH" == /* ]] || { echo "::error::AZURE_HEALTH_PATH must start with /"; exit 1; }
-
-      - name: Deploy package to staging
+      - name: Deploy exact package to staging
+        if: ${{ steps.production.outputs.already_deployed != 'true' }}
         uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
         with:
           app-name: ${{ env.AZURE_APP_NAME }}
           slot-name: staging
           package: app.zip
 
-      - name: Check staging health
+      - name: Configure staging deployment identity
+        if: ${{ steps.production.outputs.already_deployed != 'true' }}
         env:
-          BASE_URL: ${{ vars.AZURE_STAGING_URL }}
+          DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          url="${BASE_URL%/}${HEALTH_PATH}"
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error \
-              --connect-timeout 5 --max-time 15 \
-              --retry 2 --retry-delay 2 "$url" > /dev/null; then
-              echo "Staging is healthy."
-              exit 0
-            fi
-            echo "Staging check $attempt/12 failed; waiting 10 seconds."
-            sleep 10
-          done
-          echo "::error::Staging did not become healthy within the bounded check."
-          exit 1
+          az webapp config appsettings set \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --slot staging \
+            --settings DEPLOYMENT_SHA="$DEPLOYMENT_SHA" \
+            --output none \
+            --only-show-errors
 
-  swap-production:
-    needs: deploy-staging
+      - name: Verify staging, swap, and verify production
+        if: ${{ steps.production.outputs.already_deployed != 'true' }}
+        env:
+          DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+          PREVIOUS_SHA: ${{ steps.production.outputs.previous_sha }}
+          STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        run: >-
+          node .github/scripts/deployment-control.mjs orchestrate
+          --expected-sha "$DEPLOYMENT_SHA"
+          --previous-sha "$PREVIOUS_SHA"
+          --resource-group "$AZURE_RESOURCE_GROUP"
+          --app-name "$AZURE_APP_NAME"
+          --staging-url "$STAGING_URL"
+          --production-url "$PRODUCTION_URL"
+          --health-path "$HEALTH_PATH"
+          --state-file "$RUNNER_TEMP/pre-swap-slot-state.json"
+
+      - name: Upload sanitized pre-swap slot state
+        if: ${{ always() && steps.production.outputs.already_deployed != 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pre-swap-slot-state-${{ needs.resolve.outputs.deployment_sha }}
+          path: ${{ runner.temp }}/pre-swap-slot-state.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  preflight:
+    name: Validate Azure deployment prerequisites
+    needs:
+      - resolve
+      - build
+    if: ${{ needs.resolve.outputs.operation == 'preflight' }}
     runs-on: ubuntu-latest
-    environment: production
+    timeout-minutes: 10
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - name: Sign in to Azure with OIDC
+      - name: Check out exact deployment controls
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ needs.resolve.outputs.deployment_sha }}
+          persist-credentials: false
+
+      - name: Download built deployment package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: app-package-${{ needs.resolve.outputs.deployment_sha }}
+
+      - name: Validate required configuration
+        env:
+          STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_APP_NAME STAGING_URL PRODUCTION_URL; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is not configured"; exit 1; }
+          done
+          [[ -s app.zip ]] || { echo "::error::Deployment package is empty"; exit 1; }
+
+      - name: Sign in to Azure with staging OIDC identity
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Swap staging to production and verify
+      - name: Validate read access to app and slot
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --query id --output tsv --only-show-errors > /dev/null
+          az webapp show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --slot staging \
+            --query id --output tsv --only-show-errors > /dev/null
+          az webapp config appsettings list \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --query '[].name' --output tsv --only-show-errors > /dev/null
+          az webapp config appsettings list \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_APP_NAME" \
+            --slot staging \
+            --query '[].name' --output tsv --only-show-errors > /dev/null
+
+      - name: Validate production and staging URLs
         env:
+          STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
           PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
         shell: bash
         run: |
           set -euo pipefail
-          az webapp deployment slot swap \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_APP_NAME" \
-            --slot staging \
-            --target-slot production
+          node .github/scripts/deployment-control.mjs probe \
+            --base-url "$PRODUCTION_URL" \
+            --health-path "$HEALTH_PATH"
+          node .github/scripts/deployment-control.mjs probe \
+            --base-url "$STAGING_URL" \
+            --health-path "$HEALTH_PATH"
+          echo "Preflight completed without deploying, changing settings, or swapping slots."
 
-          url="${PRODUCTION_URL%/}${HEALTH_PATH}"
-          healthy=false
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error \
-              --connect-timeout 5 --max-time 15 \
-              --retry 2 --retry-delay 2 "$url" > /dev/null; then
-              healthy=true
-              break
-            fi
-            echo "Production check $attempt/12 failed; waiting 10 seconds."
-            sleep 10
-          done
+  deployment-evidence:
+    name: Publish final deployment evidence
+    needs:
+      - resolve
+      - build
+      - deploy
+      - record-deployment
+    if: ${{ always() && needs.record-deployment.outputs.deployment_id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Check out trusted deployment controls
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ needs.resolve.outputs.deployment_sha }}
+          persist-credentials: false
 
-          if [[ "$healthy" == true ]]; then
-            echo "Production is healthy."
-            exit 0
-          fi
+      - name: Calculate final deployment state
+        id: status
+        run: >-
+          node .github/scripts/deployment-control.mjs status
+          --resolve "${{ needs.resolve.result }}"
+          --build "${{ needs.build.result }}"
+          --deploy "${{ needs.deploy.result }}"
 
-          echo "::error::Production regressed; swapping the previous version back."
-          az webapp deployment slot swap \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_APP_NAME" \
-            --slot staging \
-            --target-slot production
-          exit 1
+      - name: Publish durable deployment status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ needs.record-deployment.outputs.deployment_id }}
+          STATE: ${{ steps.status.outputs.state }}
+          DESCRIPTION: ${{ steps.status.outputs.description }}
+          PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg state "$STATE" \
+            --arg log_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg environment_url "$PRODUCTION_URL" \
+            --arg description "$DESCRIPTION" \
+            '{
+              state: $state,
+              log_url: $log_url,
+              description: $description,
+              auto_inactive: true
+            } + if $environment_url == "" then {} else {
+              environment_url: $environment_url
+            } end' > "$RUNNER_TEMP/deployment-status.json"
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" \
+            --input "$RUNNER_TEMP/deployment-status.json" \
+            --silent
