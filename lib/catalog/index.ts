@@ -28,3 +28,10 @@ export {
   lowestPricedVariant,
 } from "./search.ts";
 export type { CatalogQuery, CatalogPage } from "./search.ts";
+
+export { PrintfulAdapter, mapWebhookEventToOrderResult } from "./adapters/printful-adapter.ts";
+export type {
+  PrintfulAdapterOptions,
+  PrintfulWebhookEvent,
+  FetchLike,
+} from "./adapters/printful-adapter.ts";

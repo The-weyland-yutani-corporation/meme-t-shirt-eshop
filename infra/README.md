@@ -44,3 +44,51 @@ No publish profile or long-lived Azure client secret is required. After an
 operator provisions the reviewed Bicep template, the workflow deploys the
 packaged app to `staging`, checks it, swaps it into production, checks
 production, and swaps back if the production check regresses.
+
+## Deployment pipeline behavior
+
+`.github/workflows/deploy.yml` runs after a successful `CI` run on `main`, or
+on manual `workflow_dispatch`:
+
+1. **Build** — builds the Next.js app and packages it as a deployable zip.
+2. **Deploy to staging** — deploys the package to the `staging` slot and
+   bounded-polls `AZURE_HEALTH_PATH` (12 attempts, 10s apart) on
+   `AZURE_STAGING_URL`. A failing staging health check stops the pipeline
+   before anything reaches production.
+3. **Swap to production** — swaps `staging` into production, then
+   bounded-polls `AZURE_HEALTH_PATH` on `AZURE_PRODUCTION_URL`. If production
+   fails the health check, the workflow automatically swaps the slots back
+   and fails the run, limiting customer exposure to a regressed revision.
+
+Protected-path policy (`.github/scripts/protected-path-policy.mjs`) and the
+autonomous-merge provenance gate (`.github/scripts/autonomous-merge-gate.mjs`)
+run as part of CI on every pull request, including changes to this deployment
+pipeline and infrastructure template — they require current-head Squad review
+and a valid implementation marker before an autonomous pull request can merge
+to `main`. Nothing in this deployment template or workflow bypasses those
+gates.
+
+## Kill switches
+
+- `AZURE_DEPLOY_ENABLED` — the primary kill switch for this pipeline. Set to
+  any value other than exactly `true` (for example, unset or `false`) to
+  disable both the `workflow_run` and manual `workflow_dispatch` triggers;
+  the `build` job's `if:` condition short-circuits the entire workflow before
+  any Azure call is made.
+- `FACTORY_ALLOW_MERGE` / `FACTORY_KILL_SWITCH` — repository variables that
+  gate the separate autonomous merge workflow
+  (`.github/workflows/autonomous-merge-gate.yml`). These control whether
+  Squad-authored pull requests (including changes to this deployment
+  pipeline) are auto-merged to `main`; they do not disable the deploy
+  workflow itself. See `.github/workflows/factory-controller.md` for their
+  exact semantics.
+- Removing the `production` GitHub environment's required reviewers is an
+  operator action, not a kill switch; keeping reviewers configured adds a
+  manual approval gate before the production swap step runs.
+
+## Operator-owned prerequisites (recap)
+
+All configuration above — the resource group, managed identity and federated
+credential, GitHub environments, repository variables/secrets, and the
+reviewed Bicep deployment — is operator-owned per the "Operator prerequisites"
+section above. The autonomous workflow never creates or modifies any of it.
