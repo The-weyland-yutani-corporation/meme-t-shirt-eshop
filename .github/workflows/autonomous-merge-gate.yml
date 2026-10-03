@@ -222,7 +222,10 @@ jobs:
               if (!merge.merged) {
                 throw new Error(`PR #${candidate.number} was not merged: ${merge.message}`);
               }
-              core.notice(`Squash-merged PR #${candidate.number} at ${finalPull.head.sha}.`);
+              const mergeSha = merge.sha;
+              core.notice(
+                `Squash-merged PR #${candidate.number}; resulting main SHA is ${mergeSha}.`,
+              );
 
               const cleanup = await gate.completePostMergeCleanup({
                 github,
@@ -236,15 +239,20 @@ jobs:
                 `Closed issue #${cleanup.issue} and deleted implementation head ${cleanup.headRef}.`,
               );
 
-              // GITHUB_TOKEN-authenticated merges suppress ordinary push-triggered
-              // workflows, so explicitly continue each bounded post-merge stage.
-              for (const workflow_id of ["factory-controller.lock.yml", "deploy.yml"]) {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner,
-                  repo,
-                  workflow_id,
-                  ref: targetBranch,
-                });
-                core.notice(`Dispatched ${workflow_id} after PR #${candidate.number}.`);
-              }
+              // GITHUB_TOKEN-authenticated merges can suppress ordinary push-triggered
+              // workflows. Re-fetch the merged PR and target ref, then explicitly
+              // continue bounded post-merge stages. deploy.yml remains idempotent,
+              // while workflow_run provides recovery when ordinary CI does run.
+              const dispatched = await gate.dispatchPostMergeWorkflows({
+                github,
+                owner,
+                repo,
+                repository,
+                defaultBranch: targetBranch,
+                pullNumber: candidate.number,
+                mergeSha,
+              });
+              core.notice(
+                `Dispatched ${dispatched.workflows.join(", ")} for ${dispatched.mergeSha}.`,
+              );
             }
