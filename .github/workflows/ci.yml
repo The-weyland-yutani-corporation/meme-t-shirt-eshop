@@ -78,6 +78,10 @@ jobs:
         if: ${{ hashFiles('package.json') != '' }}
         run: npm run build --if-present
 
+      - name: Validate deployment package layout
+        if: ${{ hashFiles('package.json') != '' }}
+        run: node .github/scripts/deployment-package.mjs detect --source .
+
       - name: Record sparse-repository skip
         if: ${{ hashFiles('package.json') == '' }}
         run: echo "package.json is not present; application checks are not yet applicable."
@@ -151,6 +155,7 @@ jobs:
         run: >-
           node --test
           .github/scripts/autonomous-merge-gate.test.mjs
+          .github/scripts/factory-controller-policy.test.mjs
           .github/scripts/factory-pr-continuation.test.mjs
 
       - name: Collect changed paths
