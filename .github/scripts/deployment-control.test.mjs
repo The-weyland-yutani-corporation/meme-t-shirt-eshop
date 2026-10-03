@@ -4,7 +4,10 @@ import test from "node:test";
 import {
   deploymentStatusForResults,
   fetchHealth,
+  fetchReachability,
+  healthUrl,
   parseHealthPayload,
+  pollReachability,
   runSlotDeployment,
   selectDeploymentOperation,
   selectDeploymentSha,
@@ -149,6 +152,49 @@ test("rejects malformed HTTP 200 health payloads", async () => {
   assert.throws(
     () => parseHealthPayload(JSON.stringify({ status: "ok", deploymentSha: "bad\noutput" })),
     /safe deploymentSha/,
+  );
+});
+
+test("first-deployment preflight accepts a reachable HTTP 404", async () => {
+  assert.deepEqual(
+    await fetchReachability(
+      "https://example.test/api/health",
+      async () => new Response("not deployed", { status: 404 }),
+    ),
+    { status: 404 },
+  );
+});
+
+test("first-deployment preflight fails on DNS, TLS, or network errors", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    pollReachability({
+      url: "https://unreachable.example/api/health",
+      attempts: 3,
+      delayMs: 0,
+      fetchImpl: async () => {
+        attempts += 1;
+        throw new TypeError("fetch failed");
+      },
+      sleep: async () => {},
+    }),
+    /URL reachability failed after 3 attempts: fetch failed/,
+  );
+  assert.equal(attempts, 3);
+});
+
+test("first-deployment preflight fails closed on invalid URL configuration", () => {
+  assert.throws(
+    () => healthUrl("http://example.test", "/api/health"),
+    /must use HTTPS/,
+  );
+  assert.throws(
+    () => healthUrl("https://user:password@example.test", "/api/health"),
+    /must not contain credentials/,
+  );
+  assert.throws(
+    () => healthUrl("https://example.test", "api/health"),
+    /must start with \//,
   );
 });
 

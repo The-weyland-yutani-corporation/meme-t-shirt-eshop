@@ -387,7 +387,7 @@ jobs:
             --slot staging \
             --query '[].name' --output tsv --only-show-errors > /dev/null
 
-      - name: Validate production and staging URLs
+      - name: Validate production and staging URL reachability
         env:
           STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
           PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
@@ -400,7 +400,8 @@ jobs:
           node .github/scripts/deployment-control.mjs probe \
             --base-url "$STAGING_URL" \
             --health-path "$HEALTH_PATH"
-          echo "Preflight completed without deploying, changing settings, or swapping slots."
+          echo "Preflight completed without requiring deployed health payloads."
+          echo "No package was deployed, no app setting changed, and no slot was swapped."
 
   deployment-evidence:
     name: Publish final deployment evidence
