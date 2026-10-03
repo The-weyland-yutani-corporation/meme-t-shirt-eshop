@@ -7,6 +7,7 @@ import {
   evaluateContinuationPull,
   evaluateMergeGateEvidence,
   hasActiveMergeGateRun,
+  isPendingMergeGateEvidence,
 } from "./factory-pr-continuation.mjs";
 
 const sha = "a".repeat(40);
@@ -31,6 +32,14 @@ function successfulChecks() {
     name,
     status: "completed",
     conclusion: "success",
+  }));
+}
+
+function successfulStatuses() {
+  return REQUIRED_CHECKS.map((context, index) => ({
+    id: index + 1,
+    context,
+    state: "success",
   }));
 }
 
@@ -106,7 +115,7 @@ test("requires a ready PR, successful current-head checks, and a COMMENT review"
     evaluateMergeGateEvidence(
       pull(),
       repository,
-      successfulChecks(),
+      successfulStatuses(),
       [{ ...commentedReview(), commit_id: "b".repeat(40) }],
     ).ok,
     false,
@@ -125,6 +134,18 @@ test("requires a ready PR, successful current-head checks, and a COMMENT review"
   );
 });
 
+test("accepts dispatched CI commit statuses as exact-head validation evidence", () => {
+  assert.deepEqual(
+    evaluateMergeGateEvidence(
+      pull(),
+      repository,
+      successfulStatuses(),
+      [commentedReview()],
+    ),
+    { ok: true },
+  );
+});
+
 test("never dispatches dependency branches to the merge gate", () => {
   const dependencyPull = pull({
     head: { ...pull().head, ref: "squad/deps-42-manifest" },
@@ -136,6 +157,37 @@ test("never dispatches dependency branches to the merge gate", () => {
       successfulChecks(),
       [commentedReview()],
     ).ok,
+    false,
+  );
+});
+
+test("waits only for evidence that an active validation run can still publish", () => {
+  assert.equal(
+    isPendingMergeGateEvidence({
+      ok: false,
+      reason: "missing checks: Application checks",
+    }),
+    true,
+  );
+  assert.equal(
+    isPendingMergeGateEvidence({
+      ok: false,
+      reason: "no current-head COMMENT Squad review",
+    }),
+    true,
+  );
+  assert.equal(
+    isPendingMergeGateEvidence({
+      ok: false,
+      reason: "unsuccessful checks: Application checks",
+    }),
+    false,
+  );
+  assert.equal(
+    isPendingMergeGateEvidence({
+      ok: false,
+      reason: "Squad requested changes for the current head",
+    }),
     false,
   );
 });
@@ -177,4 +229,15 @@ test("requires Squad review deduplication to use only the exact current head", (
   assert.match(policy, /A changed head SHA always requires a new review/);
   assert.match(policy, /Never carry a prior-head review forward/);
   assert.match(policy, /semantic or blob equivalence/);
+});
+
+test("continuation keeps pending exact-head validation alive before gate dispatch", () => {
+  const workflow = readFileSync(
+    new URL("../workflows/factory-pr-continuation.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /timeout-minutes: 20/);
+  assert.match(workflow, /isPendingMergeGateEvidence/);
+  assert.match(workflow, /await new Promise\(\(resolve\) => setTimeout\(resolve, 15_000\)\)/);
+  assert.match(workflow, /dispatched autonomous merge gate/);
 });
