@@ -18,7 +18,8 @@ DNS, or application secrets.
 4. Ensure CI has a workflow whose top-level `name` is `CI`, or update
    `workflows: [CI]` in `.github/workflows/deploy.yml`.
 5. The application must expose an unauthenticated health endpoint matching
-   `AZURE_HEALTH_PATH` (default `/api/health`) and return HTTP 2xx/3xx.
+   `AZURE_HEALTH_PATH` (default `/api/health`). It must return HTTP 2xx with
+   JSON containing `status: "ok"` and the running `deploymentSha`.
 6. Deploy `infra/main.bicep` manually after reviewing the SKU and expected
    cost. Record its production and staging URLs as repository variables.
 
@@ -48,17 +49,37 @@ production, and swaps back if the production check regresses.
 ## Deployment pipeline behavior
 
 `.github/workflows/deploy.yml` runs after a successful `CI` run on `main`, or
-on manual `workflow_dispatch`:
+on manual `workflow_dispatch`. Manual runs require the exact current `main`
+SHA and default to a non-deploying `preflight` operation. Both triggers fail
+closed if that SHA is malformed, comes from another repository, or is no
+longer the current `main` head.
 
-1. **Build** — builds the Next.js app and packages it as a deployable zip.
-2. **Deploy to staging** — deploys the package to the `staging` slot and
-   bounded-polls `AZURE_HEALTH_PATH` (12 attempts, 10s apart) on
-   `AZURE_STAGING_URL`. A failing staging health check stops the pipeline
-   before anything reaches production.
-3. **Swap to production** — swaps `staging` into production, then
-   bounded-polls `AZURE_HEALTH_PATH` on `AZURE_PRODUCTION_URL`. If production
-   fails the health check, the workflow automatically swaps the slots back
-   and fails the run, limiting customer exposure to a regressed revision.
+1. **Resolve and build** — validates the exact current deployment SHA, builds
+   that revision, and packages it. Deploy operations also create a queued
+   GitHub deployment record; preflight does not request deployment permission.
+2. **Inspect and deploy staging** — validates the current production health
+   identity. An idempotent rerun exits successfully without deploying or
+   swapping when production already serves the requested SHA. Otherwise the
+   package is deployed to `staging` and `DEPLOYMENT_SHA` is configured there.
+3. **Verify before swap** — bounded-polls staging and requires JSON
+   `status=ok` with the exact expected SHA. A failure stops before any swap.
+   Sanitized production/staging state is captured as a retained artifact.
+4. **Swap and verify production** — performs one production swap and applies
+   the same exact-SHA health validation to production.
+5. **Rollback once** — if production verification fails, performs exactly one
+   swap-back and verifies the previously captured production SHA. Rollback
+   command or verification failures are surfaced explicitly.
+6. **Record evidence** — publishes queued, in-progress, and final GitHub
+   deployment statuses. Failure/error statuses are durable inputs for
+   `factory-signal-intake`.
+
+The manual `preflight` operation remains available while
+`AZURE_DEPLOY_ENABLED` is disabled. It builds and downloads the package,
+authenticates through the `staging` environment's OIDC identity, verifies
+read access to the app and staging slot without logging app-setting values,
+and validates both health URLs. It never deploys a package, changes an app
+setting, creates a production deployment record, or swaps slots. Manual
+`deploy` and all `workflow_run` deployments still require the kill switch.
 
 Protected-path policy (`.github/scripts/protected-path-policy.mjs`) and the
 autonomous-merge provenance gate (`.github/scripts/autonomous-merge-gate.mjs`)
