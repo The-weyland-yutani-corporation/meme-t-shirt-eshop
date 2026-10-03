@@ -111,6 +111,16 @@ export async function fetchHealth(url, expectedSha, fetchImpl = fetch) {
   return parseHealthPayload(await response.text(), expectedSha);
 }
 
+export async function fetchReachability(url, fetchImpl = fetch) {
+  const response = await fetchImpl(url, {
+    headers: { accept: "application/json" },
+    redirect: "manual",
+    signal: AbortSignal.timeout(15_000),
+  });
+  await response.body?.cancel();
+  return { status: response.status };
+}
+
 export async function pollHealth({
   url,
   expectedSha,
@@ -130,6 +140,29 @@ export async function pollHealth({
   }
   throw new Error(
     `health verification failed after ${attempts} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
+export async function pollReachability({
+  url,
+  attempts = 3,
+  delayMs = 2_000,
+  fetchImpl = fetch,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchReachability(url, fetchImpl);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(delayMs);
+    }
+  }
+  throw new Error(
+    `URL reachability failed after ${attempts} attempts: ${
       lastError instanceof Error ? lastError.message : String(lastError)
     }`,
   );
@@ -211,7 +244,7 @@ function optionalArgument(name, args, fallback) {
   return index === -1 ? fallback : args[index + 1];
 }
 
-function healthUrl(baseUrl, healthPath) {
+export function healthUrl(baseUrl, healthPath) {
   const base = new URL(required(baseUrl, "base URL"));
   if (base.protocol !== "https:" && base.hostname !== "127.0.0.1") {
     throw new Error("health base URL must use HTTPS");
@@ -262,12 +295,12 @@ async function commandResolve(args) {
 }
 
 async function commandProbe(args) {
-  const health = await pollHealth({
+  const result = await pollReachability({
     url: healthUrl(argument("base-url", args), argument("health-path", args)),
     attempts: Number(optionalArgument("attempts", args, "3")),
     delayMs: Number(optionalArgument("delay-ms", args, "2000")),
   });
-  console.log(`Health endpoint is valid and reports deployment identity ${health.deploymentSha}.`);
+  console.log(`URL is reachable and returned HTTP ${result.status}.`);
 }
 
 async function commandInspect(args) {

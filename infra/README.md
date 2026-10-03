@@ -79,9 +79,14 @@ The manual `preflight` operation remains available while
 `AZURE_DEPLOY_ENABLED` is disabled. It builds and downloads the package,
 authenticates through the `staging` environment's OIDC identity, verifies
 read access to the app and staging slot without logging app-setting values,
-and validates both health URLs. It never deploys a package, changes an app
-setting, creates a production deployment record, or swaps slots. Manual
-`deploy` and all `workflow_run` deployments still require the kill switch.
+and validates that both configured health URLs have valid HTTPS syntax and
+complete a DNS/TLS/network request. Any completed HTTP response, including an
+expected first-deployment `404`, proves reachability; preflight does not
+require an application health payload before the first deployment. It never
+deploys a package, changes an app setting, creates a production deployment
+record, or swaps slots. Manual `deploy` and all `workflow_run` deployments
+still require the kill switch and retain strict HTTP-success JSON checks for
+`status=ok` with the exact deployment SHA.
 
 Protected-path policy (`.github/scripts/protected-path-policy.mjs`) and the
 autonomous-merge provenance gate (`.github/scripts/autonomous-merge-gate.mjs`)
