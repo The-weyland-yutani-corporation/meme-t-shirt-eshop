@@ -69,8 +69,9 @@ longer the current `main` head.
 4. **Swap and verify production** — performs one production swap and applies
    the same exact-SHA health validation to production.
 5. **Rollback once** — if production verification fails, performs exactly one
-   swap-back and verifies the previously captured production SHA. Rollback
-   command or verification failures are surfaced explicitly.
+   swap-back and verifies the previously captured production SHA or restores
+   the same non-2xx first-deployment state. Rollback command or verification
+   failures are surfaced explicitly.
 6. **Record evidence** — publishes queued, in-progress, and final GitHub
    deployment statuses. Failure/error statuses are durable inputs for
    `factory-signal-intake`.
@@ -87,6 +88,13 @@ deploys a package, changes an app setting, creates a production deployment
 record, or swaps slots. Manual `deploy` and all `workflow_run` deployments
 still require the kill switch and retain strict HTTP-success JSON checks for
 `status=ok` with the exact deployment SHA.
+
+The deploy operation's initial production inspection also accepts any
+completed non-2xx response as a not-yet-deployed state, so a first deployment
+can proceed. A 2xx response remains strict: it must contain valid JSON with
+`status=ok`, and deployment is skipped only when `deploymentSha` exactly
+matches the selected SHA. URL configuration and DNS/TLS/network/timeout
+failures remain fatal.
 
 Protected-path policy (`.github/scripts/protected-path-policy.mjs`) and the
 autonomous-merge provenance gate (`.github/scripts/autonomous-merge-gate.mjs`)

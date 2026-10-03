@@ -6,6 +6,7 @@ import {
   fetchHealth,
   fetchReachability,
   healthUrl,
+  inspectProduction,
   parseHealthPayload,
   pollReachability,
   runSlotDeployment,
@@ -155,6 +156,79 @@ test("rejects malformed HTTP 200 health payloads", async () => {
   );
 });
 
+test("first-deployment inspect accepts a completed HTTP 404 as undeployed", async () => {
+  assert.deepEqual(
+    await inspectProduction(
+      "https://example.test/api/health",
+      newSha,
+      async () => new Response("not deployed", { status: 404 }),
+    ),
+    { status: "undeployed", httpStatus: 404, alreadyDeployed: false },
+  );
+});
+
+test("first-deployment inspect only marks an exact healthy SHA as already deployed", async () => {
+  assert.deepEqual(
+    await inspectProduction(
+      "https://example.test/api/health",
+      newSha,
+      async () =>
+        new Response(JSON.stringify({ status: "ok", deploymentSha: newSha }), {
+          status: 200,
+        }),
+    ),
+    { status: "ok", deploymentSha: newSha, alreadyDeployed: true },
+  );
+  assert.deepEqual(
+    await inspectProduction(
+      "https://example.test/api/health",
+      newSha,
+      async () =>
+        new Response(JSON.stringify({ status: "ok", deploymentSha: oldSha }), {
+          status: 200,
+        }),
+    ),
+    { status: "ok", deploymentSha: oldSha, alreadyDeployed: false },
+  );
+});
+
+test("first-deployment inspect rejects malformed successful health payloads", async () => {
+  await assert.rejects(
+    inspectProduction(
+      "https://example.test/api/health",
+      newSha,
+      async () => new Response("<html>ok</html>", { status: 200 }),
+    ),
+    /valid JSON/,
+  );
+});
+
+test("first-deployment inspect fails on DNS, TLS, or network errors", async () => {
+  await assert.rejects(
+    inspectProduction(
+      "https://unreachable.example/api/health",
+      newSha,
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+    ),
+    /fetch failed/,
+  );
+});
+
+test("first-deployment inspect fails on request timeouts", async () => {
+  await assert.rejects(
+    inspectProduction(
+      "https://example.test/api/health",
+      newSha,
+      async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      },
+    ),
+    /timeout/i,
+  );
+});
+
 test("first-deployment preflight accepts a reachable HTTP 404", async () => {
   assert.deepEqual(
     await fetchReachability(
@@ -210,7 +284,12 @@ function operations({ stagingFails = false, productionFails = false, rollbackFai
     checkProduction: async (sha) => {
       calls.push(`check-production:${sha}`);
       if (productionFails && sha === newSha) throw new Error("production unhealthy");
-      if (rollbackFails && sha === oldSha) throw new Error("old production not restored");
+    },
+    checkPreviousProduction: async (previous) => {
+      calls.push(
+        `check-previous:${previous.status}:${previous.deploymentSha ?? previous.httpStatus}`,
+      );
+      if (rollbackFails) throw new Error("old production not restored");
     },
     captureState: async () => calls.push("capture-state"),
     swap: async () => {
@@ -266,7 +345,27 @@ test("production failure performs exactly one rollback and verifies it", async (
     "swap:1",
     `check-production:${newSha}`,
     "swap:2",
-    `check-production:${oldSha}`,
+    `check-previous:ok:${oldSha}`,
+  ]);
+});
+
+test("first deployment rollback verifies the prior undeployed HTTP state", async () => {
+  const ops = operations({ productionFails: true });
+  await assert.rejects(
+    runSlotDeployment({
+      expectedSha: newSha,
+      previousProduction: { status: "undeployed", httpStatus: 404 },
+      ...ops,
+    }),
+    /rollback completed and was verified/,
+  );
+  assert.deepEqual(ops.calls, [
+    "check-staging",
+    "capture-state",
+    "swap:1",
+    `check-production:${newSha}`,
+    "swap:2",
+    "check-previous:undeployed:404",
   ]);
 });
 
