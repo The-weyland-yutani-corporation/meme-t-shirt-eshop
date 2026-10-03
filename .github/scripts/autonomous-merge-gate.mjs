@@ -138,6 +138,71 @@ export async function completePostMergeCleanup({
   return { ...target, issueAlreadyClosed, headAlreadyDeleted };
 }
 
+export async function dispatchPostMergeWorkflows({
+  github,
+  owner,
+  repo,
+  repository,
+  defaultBranch,
+  pullNumber,
+  mergeSha,
+}) {
+  if (!SHA.test(String(mergeSha ?? ""))) {
+    throw new Error("invalid squash merge SHA for post-merge dispatch");
+  }
+
+  const [{ data: mergedPull }, { data: defaultRef }] = await Promise.all([
+    github.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: pullNumber,
+    }),
+    github.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${defaultBranch}`,
+    }),
+  ]);
+
+  if (
+    mergedPull?.number !== pullNumber ||
+    mergedPull?.state !== "closed" ||
+    mergedPull?.merged !== true ||
+    mergedPull?.merge_commit_sha !== mergeSha ||
+    mergedPull?.base?.ref !== defaultBranch ||
+    mergedPull?.base?.repo?.full_name !== repository
+  ) {
+    throw new Error(`PR #${pullNumber} did not refetch as the expected squash merge`);
+  }
+  if (
+    defaultRef?.ref !== `refs/heads/${defaultBranch}` ||
+    defaultRef?.object?.sha !== mergeSha
+  ) {
+    throw new Error(
+      `default branch advanced or did not reach squash merge SHA ${mergeSha}`,
+    );
+  }
+
+  await github.rest.actions.createWorkflowDispatch({
+    owner,
+    repo,
+    workflow_id: "factory-controller.lock.yml",
+    ref: defaultBranch,
+  });
+  await github.rest.actions.createWorkflowDispatch({
+    owner,
+    repo,
+    workflow_id: "deploy.yml",
+    ref: defaultBranch,
+    inputs: {
+      operation: "deploy",
+      deployment_sha: mergeSha,
+    },
+  });
+
+  return { mergeSha, workflows: ["factory-controller.lock.yml", "deploy.yml"] };
+}
+
 export function evaluateSquadReview(reviews, headSha) {
   if (!SHA.test(String(headSha ?? ""))) {
     return { ok: false, reason: "invalid head SHA" };

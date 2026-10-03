@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   REQUIRED_CHECKS,
   completePostMergeCleanup,
+  dispatchPostMergeWorkflows,
   evaluateChecks,
   evaluatePostMergeCleanup,
   evaluateSourceIssue,
@@ -194,6 +195,105 @@ test("fails when either required post-merge condition is not achieved", async ()
     }),
     /still exists/,
   );
+});
+
+function postMergeGithub({
+  pullMergeSha = updatedSha,
+  defaultBranchSha = updatedSha,
+} = {}) {
+  const dispatches = [];
+  return {
+    dispatches,
+    github: {
+      rest: {
+        pulls: {
+          async get() {
+            return {
+              data: {
+                number: 42,
+                state: "closed",
+                merged: true,
+                merge_commit_sha: pullMergeSha,
+                base: {
+                  ref: "main",
+                  repo: { full_name: "owner/repo" },
+                },
+              },
+            };
+          },
+        },
+        git: {
+          async getRef() {
+            return {
+              data: {
+                ref: "refs/heads/main",
+                object: { sha: defaultBranchSha },
+              },
+            };
+          },
+        },
+        actions: {
+          async createWorkflowDispatch(parameters) {
+            dispatches.push(parameters);
+          },
+        },
+      },
+    },
+  };
+}
+
+test("dispatches deployment with the refetched squash merge SHA", async () => {
+  const mock = postMergeGithub();
+  const result = await dispatchPostMergeWorkflows({
+    github: mock.github,
+    owner: "owner",
+    repo: "repo",
+    repository: "owner/repo",
+    defaultBranch: "main",
+    pullNumber: 42,
+    mergeSha: updatedSha,
+  });
+
+  assert.equal(result.mergeSha, updatedSha);
+  assert.deepEqual(mock.dispatches, [
+    {
+      owner: "owner",
+      repo: "repo",
+      workflow_id: "factory-controller.lock.yml",
+      ref: "main",
+    },
+    {
+      owner: "owner",
+      repo: "repo",
+      workflow_id: "deploy.yml",
+      ref: "main",
+      inputs: {
+        operation: "deploy",
+        deployment_sha: updatedSha,
+      },
+    },
+  ]);
+});
+
+test("refuses stale or unconfirmed post-merge deployment dispatches", async () => {
+  for (const mock of [
+    postMergeGithub({ pullMergeSha: sha }),
+    postMergeGithub({ defaultBranchSha: sha }),
+  ]) {
+    await assert.rejects(
+      dispatchPostMergeWorkflows({
+        github: mock.github,
+        owner: "owner",
+        repo: "repo",
+        repository: "owner/repo",
+        defaultBranch: "main",
+        pullNumber: 42,
+        mergeSha: updatedSha,
+      }),
+      /expected squash merge|default branch advanced/,
+    );
+    assert.deepEqual(mock.dispatches, []);
+  }
 });
 
 test("requires a bot COMMENT review for the exact current head", () => {
