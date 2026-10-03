@@ -24,6 +24,7 @@ permissions:
   checks: read
   contents: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   group: factory-pr-continuation-${{ github.repository }}
@@ -33,7 +34,7 @@ jobs:
   dispatch:
     name: Dispatch missing PR validation
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Check out trusted continuation implementation
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -112,8 +113,14 @@ jobs:
                 continue;
               }
 
-              const [checkRuns, reviews, reviewRuns] = await Promise.all([
+              const [checkRuns, commitStatuses, reviews, reviewRuns] =
+                await Promise.all([
                 allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                }),
+                allPages(github.rest.repos.listCommitStatusesForRef, {
                   owner,
                   repo,
                   ref: pull.head.sha,
@@ -131,9 +138,10 @@ jobs:
                   branch: context.payload.repository.default_branch,
                 }),
               ]);
+              const validationRuns = [...checkRuns, ...commitStatuses];
 
-              const hasAnyRequiredCheck = checkRuns.some((run) =>
-                requiredChecks.includes(run.name),
+              const hasAnyRequiredCheck = validationRuns.some((run) =>
+                requiredChecks.includes(run.name ?? run.context),
               );
               if (!hasAnyRequiredCheck) {
                 await github.rest.actions.createWorkflowDispatch({
@@ -196,9 +204,74 @@ jobs:
               let mergeGateEvidence = continuation.evaluateMergeGateEvidence(
                 pull,
                 repository,
-                checkRuns,
+                validationRuns,
                 reviews,
               );
+              if (
+                !mergeGateEvidence.ok &&
+                continuation.isPendingMergeGateEvidence(mergeGateEvidence)
+              ) {
+                for (let attempt = 1; attempt <= 48; attempt += 1) {
+                  core.notice(
+                    `PR #${pull.number}: waiting for exact-head validation evidence ` +
+                      `(attempt ${attempt}/48).`,
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, 15_000));
+
+                  const { data: waitingPull } = await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: pull.number,
+                  });
+                  if (
+                    waitingPull.head.sha !== pull.head.sha ||
+                    !continuation.evaluateContinuationPull(
+                      waitingPull,
+                      repository,
+                    ).ok
+                  ) {
+                    mergeGateEvidence = {
+                      ok: false,
+                      reason: "pull request changed while validation was pending",
+                    };
+                    break;
+                  }
+
+                  const [waitingChecks, waitingStatuses, waitingReviews] =
+                    await Promise.all([
+                      allPages(github.rest.checks.listForRef, {
+                        owner,
+                        repo,
+                        ref: waitingPull.head.sha,
+                      }),
+                      allPages(github.rest.repos.listCommitStatusesForRef, {
+                        owner,
+                        repo,
+                        ref: waitingPull.head.sha,
+                      }),
+                      allPages(github.rest.pulls.listReviews, {
+                        owner,
+                        repo,
+                        pull_number: waitingPull.number,
+                      }),
+                    ]);
+                  mergeGateEvidence =
+                    continuation.evaluateMergeGateEvidence(
+                      waitingPull,
+                      repository,
+                      [...waitingChecks, ...waitingStatuses],
+                      waitingReviews,
+                    );
+                  if (
+                    mergeGateEvidence.ok ||
+                    !continuation.isPendingMergeGateEvidence(
+                      mergeGateEvidence,
+                    )
+                  ) {
+                    break;
+                  }
+                }
+              }
               if (!mergeGateEvidence.ok) {
                 core.notice(
                   `PR #${pull.number}: merge gate evidence incomplete: ${mergeGateEvidence.reason}.`,
@@ -221,8 +294,14 @@ jobs:
                 continue;
               }
 
-              const [finalChecks, finalReviews] = await Promise.all([
+              const [finalChecks, finalStatuses, finalReviews] =
+                await Promise.all([
                 allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: refreshed.head.sha,
+                }),
+                allPages(github.rest.repos.listCommitStatusesForRef, {
                   owner,
                   repo,
                   ref: refreshed.head.sha,
@@ -236,7 +315,7 @@ jobs:
               mergeGateEvidence = continuation.evaluateMergeGateEvidence(
                 refreshed,
                 repository,
-                finalChecks,
+                [...finalChecks, ...finalStatuses],
                 finalReviews,
               );
               if (!mergeGateEvidence.ok) {

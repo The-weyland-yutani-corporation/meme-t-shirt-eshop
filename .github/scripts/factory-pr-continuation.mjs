@@ -46,6 +46,14 @@ export function evaluateMergeGateEvidence(pull, repository, checkRuns, reviews) 
   return evaluateSquadReview(reviews, pull.head.sha);
 }
 
+export function isPendingMergeGateEvidence(result) {
+  const reason = String(result?.reason ?? "");
+  return (
+    reason === "no current-head COMMENT Squad review" ||
+    reason.startsWith("missing checks: ")
+  );
+}
+
 export function hasActiveMergeGateRun(runs, pullNumber) {
   const marker = `PR #${pullNumber}`;
   return (runs ?? []).some(

@@ -229,9 +229,22 @@ export function evaluateSquadReview(reviews, headSha) {
 export function evaluateChecks(checkRuns, required = REQUIRED_CHECKS) {
   const latest = new Map();
   for (const run of checkRuns ?? []) {
-    if (!required.includes(run?.name)) continue;
-    const previous = latest.get(run.name);
-    if (!previous || Number(run.id) > Number(previous.id)) latest.set(run.name, run);
+    const name = run?.name ?? run?.context;
+    if (!required.includes(name)) continue;
+    const normalized = {
+      ...run,
+      name,
+      status:
+        run.status ??
+        (run.state === "pending" ? "in_progress" : "completed"),
+      conclusion:
+        run.conclusion ??
+        (run.state === "pending" ? null : run.state),
+    };
+    const previous = latest.get(name);
+    if (!previous || Number(normalized.id) > Number(previous.id)) {
+      latest.set(name, normalized);
+    }
   }
 
   const missing = required.filter((name) => !latest.has(name));

@@ -362,6 +362,29 @@ test("requires the latest run of every exact required check to succeed", () => {
   );
 });
 
+test("accepts exact required commit statuses published by dispatched CI", () => {
+  assert.deepEqual(
+    evaluateChecks(
+      REQUIRED_CHECKS.map((context, index) => ({
+        id: index + 1,
+        context,
+        state: "success",
+      })),
+    ),
+    { ok: true },
+  );
+  assert.equal(
+    evaluateChecks(
+      REQUIRED_CHECKS.map((context, index) => ({
+        id: index + 1,
+        context,
+        state: index === 0 ? "pending" : "success",
+      })),
+    ).ok,
+    false,
+  );
+});
+
 test("validates source issues, pull request shape, and variable truthiness", () => {
   assert.deepEqual(
     evaluateSourceIssue({ state: "closed", labels: [{ name: "squad:builder" }] }),

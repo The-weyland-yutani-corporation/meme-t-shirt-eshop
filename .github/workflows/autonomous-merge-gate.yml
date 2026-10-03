@@ -22,6 +22,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  statuses: read
 
 concurrency:
   group: autonomous-merge-gate-${{ github.repository }}
@@ -139,7 +140,7 @@ jobs:
               const issueGate = gate.evaluateSourceIssue(issue);
               if (!issueGate.ok) return issueGate;
 
-              const [reviews, checkRuns] = await Promise.all([
+              const [reviews, checkRuns, commitStatuses] = await Promise.all([
                 allPages(github.rest.pulls.listReviews, {
                   owner,
                   repo,
@@ -150,10 +151,18 @@ jobs:
                   repo,
                   ref: pull.head.sha,
                 }),
+                allPages(github.rest.repos.listCommitStatusesForRef, {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                }),
               ]);
               const reviewGate = gate.evaluateSquadReview(reviews, pull.head.sha);
               if (!reviewGate.ok) return reviewGate;
-              const checksGate = gate.evaluateChecks(checkRuns);
+              const checksGate = gate.evaluateChecks([
+                ...checkRuns,
+                ...commitStatuses,
+              ]);
               return checksGate.ok
                 ? { ...checksGate, issue: marker.issue }
                 : checksGate;
