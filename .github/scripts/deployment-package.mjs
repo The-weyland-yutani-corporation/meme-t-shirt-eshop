@@ -45,10 +45,10 @@ export async function detectPackageMode(sourceDirectory) {
   );
 }
 
-async function writeStandalonePackageJson(destinationDirectory) {
+async function writePackageStart(destinationDirectory, start) {
   const packagePath = path.join(destinationDirectory, "package.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-  packageJson.scripts = { ...packageJson.scripts, start: "node server.js" };
+  packageJson.scripts = { ...packageJson.scripts, start };
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
@@ -66,7 +66,7 @@ export async function createDeploymentLayout({
       destinationDirectory,
       "standalone output",
     );
-    await writeStandalonePackageJson(destinationDirectory);
+    await writePackageStart(destinationDirectory, "node server.js");
     await mkdir(path.join(destinationDirectory, ".next"), { recursive: true });
     await copyRequired(
       path.join(sourceDirectory, ".next", "static"),
@@ -92,6 +92,10 @@ export async function createDeploymentLayout({
       path.join(sourceDirectory, "node_modules"),
       path.join(destinationDirectory, "node_modules"),
       "production node_modules",
+    );
+    await writePackageStart(
+      destinationDirectory,
+      "node node_modules/next/dist/bin/next start",
     );
     for (const configName of ["next.config.js", "next.config.mjs", "next.config.ts"]) {
       await copyOptional(
