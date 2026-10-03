@@ -55,8 +55,10 @@ closed if that SHA is malformed, comes from another repository, or is no
 longer the current `main` head.
 
 1. **Resolve and build** — validates the exact current deployment SHA, builds
-   that revision, and packages it. Deploy operations also create a queued
-   GitHub deployment record; preflight does not request deployment permission.
+   that revision, and packages either Next.js standalone output or the
+   repository's standard `.next` output with pruned production dependencies.
+   Deploy operations also create a queued GitHub deployment record; preflight
+   does not request deployment permission.
 2. **Inspect and deploy staging** — validates the current production health
    identity. An idempotent rerun exits successfully without deploying or
    swapping when production already serves the requested SHA. Otherwise the
