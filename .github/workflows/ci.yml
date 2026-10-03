@@ -151,6 +151,7 @@ jobs:
         run: >-
           node --test
           .github/scripts/autonomous-merge-gate.test.mjs
+          .github/scripts/factory-controller-policy.test.mjs
           .github/scripts/factory-pr-continuation.test.mjs
 
       - name: Collect changed paths
