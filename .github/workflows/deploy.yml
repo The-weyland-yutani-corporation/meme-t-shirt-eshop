@@ -299,12 +299,14 @@ jobs:
         env:
           DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
           PREVIOUS_SHA: ${{ steps.production.outputs.previous_sha }}
+          PREVIOUS_HTTP_STATUS: ${{ steps.production.outputs.previous_http_status }}
           STAGING_URL: ${{ vars.AZURE_STAGING_URL }}
           PRODUCTION_URL: ${{ vars.AZURE_PRODUCTION_URL }}
         run: >-
           node .github/scripts/deployment-control.mjs orchestrate
           --expected-sha "$DEPLOYMENT_SHA"
           --previous-sha "$PREVIOUS_SHA"
+          --previous-http-status "$PREVIOUS_HTTP_STATUS"
           --resource-group "$AZURE_RESOURCE_GROUP"
           --app-name "$AZURE_APP_NAME"
           --staging-url "$STAGING_URL"

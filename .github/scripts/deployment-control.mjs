@@ -111,6 +111,28 @@ export async function fetchHealth(url, expectedSha, fetchImpl = fetch) {
   return parseHealthPayload(await response.text(), expectedSha);
 }
 
+export async function inspectProduction(url, expectedSha, fetchImpl = fetch) {
+  const response = await fetchImpl(url, {
+    headers: { accept: "application/json" },
+    redirect: "manual",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    return {
+      status: "undeployed",
+      httpStatus: response.status,
+      alreadyDeployed: false,
+    };
+  }
+
+  const production = parseHealthPayload(await response.text());
+  return {
+    ...production,
+    alreadyDeployed: production.deploymentSha === expectedSha,
+  };
+}
+
 export async function fetchReachability(url, fetchImpl = fetch) {
   const response = await fetchImpl(url, {
     headers: { accept: "application/json" },
@@ -145,6 +167,30 @@ export async function pollHealth({
   );
 }
 
+export async function pollProductionInspection({
+  url,
+  expectedSha,
+  attempts = 3,
+  delayMs = 2_000,
+  fetchImpl = fetch,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await inspectProduction(url, expectedSha, fetchImpl);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(delayMs);
+    }
+  }
+  throw new Error(
+    `production inspection failed after ${attempts} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
 export async function pollReachability({
   url,
   attempts = 3,
@@ -173,10 +219,14 @@ export async function runSlotDeployment({
   previousProduction,
   checkStaging,
   checkProduction,
+  checkPreviousProduction,
   captureState,
   swap,
 }) {
-  if (previousProduction.deploymentSha === expectedSha) {
+  if (
+    previousProduction.status === "ok" &&
+    previousProduction.deploymentSha === expectedSha
+  ) {
     return { outcome: "already_deployed", swaps: 0, rollbacks: 0 };
   }
 
@@ -200,7 +250,7 @@ export async function runSlotDeployment({
     }
 
     try {
-      await checkProduction(previousProduction.deploymentSha);
+      await checkPreviousProduction(previousProduction);
     } catch (rollbackVerificationError) {
       throw new Error(
         `ROLLBACK FAILED verification: ${
@@ -305,23 +355,36 @@ async function commandProbe(args) {
 
 async function commandInspect(args) {
   const expectedSha = exactSha(argument("expected-sha", args), "expected SHA");
-  const production = await pollHealth({
+  const production = await pollProductionInspection({
     url: healthUrl(argument("base-url", args), argument("health-path", args)),
+    expectedSha,
     attempts: Number(optionalArgument("attempts", args, "3")),
     delayMs: Number(optionalArgument("delay-ms", args, "2000")),
   });
-  await appendOutput("already_deployed", String(production.deploymentSha === expectedSha));
-  await appendOutput("previous_sha", production.deploymentSha);
-  console.log(
-    production.deploymentSha === expectedSha
-      ? "Production already serves the expected deployment SHA."
-      : "Production is healthy and its current deployment identity was captured.",
+  await appendOutput("already_deployed", String(production.alreadyDeployed));
+  await appendOutput(
+    "previous_sha",
+    production.status === "ok" ? production.deploymentSha : "",
   );
+  await appendOutput(
+    "previous_http_status",
+    production.status === "undeployed" ? String(production.httpStatus) : "",
+  );
+  if (production.alreadyDeployed) {
+    console.log("Production already serves the expected deployment SHA.");
+  } else if (production.status === "ok") {
+    console.log("Production is healthy and its current deployment identity was captured.");
+  } else {
+    console.log(
+      `Production returned HTTP ${production.httpStatus}; treating it as not yet deployed.`,
+    );
+  }
 }
 
 async function commandOrchestrate(args) {
   const expectedSha = exactSha(argument("expected-sha", args), "expected SHA");
-  const previousSha = required(argument("previous-sha", args), "previous production SHA");
+  const previousSha = optionalArgument("previous-sha", args, "").trim();
+  const previousHttpStatus = optionalArgument("previous-http-status", args, "").trim();
   const resourceGroup = argument("resource-group", args);
   const appName = argument("app-name", args);
   const healthPath = argument("health-path", args);
@@ -333,13 +396,52 @@ async function commandOrchestrate(args) {
 
   const check = (url, sha) =>
     pollHealth({ url, expectedSha: sha, attempts, delayMs });
-  const previousProduction = { status: "ok", deploymentSha: previousSha };
+  let previousProduction;
+  if (previousSha) {
+    if (previousHttpStatus) {
+      throw new Error("previous production cannot have both SHA and HTTP status");
+    }
+    previousProduction = parseHealthPayload(
+      JSON.stringify({ status: "ok", deploymentSha: previousSha }),
+    );
+  } else {
+    const httpStatus = Number(previousHttpStatus);
+    if (
+      !Number.isInteger(httpStatus) ||
+      httpStatus < 100 ||
+      httpStatus > 599 ||
+      (httpStatus >= 200 && httpStatus < 300)
+    ) {
+      throw new Error("previous HTTP status must be a valid non-2xx status");
+    }
+    previousProduction = { status: "undeployed", httpStatus };
+  }
 
   const result = await runSlotDeployment({
     expectedSha,
     previousProduction,
     checkStaging: (sha) => check(stagingUrl, sha),
     checkProduction: (sha) => check(productionUrl, sha),
+    checkPreviousProduction: async (previous) => {
+      if (previous.status === "ok") {
+        await check(productionUrl, previous.deploymentSha);
+        return;
+      }
+      const restored = await pollProductionInspection({
+        url: productionUrl,
+        expectedSha,
+        attempts,
+        delayMs,
+      });
+      if (
+        restored.status !== "undeployed" ||
+        restored.httpStatus !== previous.httpStatus
+      ) {
+        throw new Error(
+          `previous undeployed state was not restored: expected HTTP ${previous.httpStatus}`,
+        );
+      }
+    },
     captureState: async () => {
       const [productionSlot, stagingSlot] = ["production", "staging"].map((slot) => {
         const slotArgs =
