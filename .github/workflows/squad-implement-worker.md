@@ -1094,11 +1094,15 @@ The remaining instructions apply only to `workflow_dispatch`.
    every acceptance criterion.
 2. Use the routed Squad specialists for design, implementation, tests, and
    review. Keep delegation bounded to this issue.
-3. Do not change `.github/workflows/`, `.github/agents/`, `.github/aw/`, or
-   `.squad/`.
-4. Run the smallest existing build, test, and lint commands covering the change.
-5. Review the final diff against the issue acceptance criteria.
-6. If an attempted implementation cannot complete because a build, test, or
+3. General product implementation must not create, modify, or delete any path
+   under `.github/**`. This includes repository- or product-owned scripts,
+   tests, fixtures, and tooling; place them in an existing allowed root such as
+   `scripts/**`, `tools/**`, `test/**`, or `tests/**` instead. Never use
+   `.github/scripts/**` as a product implementation root.
+4. Do not change `.squad/`.
+5. Run the smallest existing build, test, and lint commands covering the change.
+6. Review the final diff against the issue acceptance criteria.
+7. If an attempted implementation cannot complete because a build, test, or
    review-correction failure persists, emit one complete typed retrospective
    wakeup before reporting the incomplete result, EXCEPT for a retro-originated
    run: its durable action/receipt is already queued for reconciliation. Such a
