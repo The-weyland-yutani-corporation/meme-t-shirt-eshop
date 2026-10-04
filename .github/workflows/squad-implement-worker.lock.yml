@@ -865,8 +865,17 @@ jobs:
                         "description": "Squad command (e.g., cast, implement, connect org/repo, adopt org/repo, status)",
                         "type": "string"
                       },
+                      "force_implementation_retry": {
+                        "default": false,
+                        "description": "Maintainer-only recovery for a stalled implement dispatch after bounded verification",
+                        "type": "boolean"
+                      },
                       "issue_number": {
                         "description": "Issue number to implement when run manually",
+                        "type": "string"
+                      },
+                      "recovery_reason": {
+                        "description": "Required recovery evidence in the form \"Root cause: ... Remediation: ...\"",
                         "type": "string"
                       },
                       "ref": {
