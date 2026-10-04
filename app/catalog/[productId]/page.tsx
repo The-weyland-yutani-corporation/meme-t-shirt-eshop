@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { ProviderNotFoundError } from "@/lib/catalog";
 import { getProvider } from "@/app/lib/provider";
 import { formatPrice } from "@/app/lib/format";
+import { JsonLd } from "@/app/lib/JsonLd";
+import { productJsonLd } from "@/app/lib/structured-data";
 
 interface ProductPageProps {
   params: Promise<{ productId: string }>;
@@ -13,7 +15,10 @@ export async function generateMetadata({ params }: ProductPageProps) {
   const provider = getProvider();
   try {
     const product = await provider.getProduct(productId);
-    return { title: `${product.name} | Meme T-Shirt Eshop` };
+    return {
+      title: `${product.name} | Meme T-Shirt Eshop`,
+      description: product.description,
+    };
   } catch {
     return { title: "Product not found | Meme T-Shirt Eshop" };
   }
@@ -35,6 +40,7 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
 
   return (
     <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <JsonLd data={productJsonLd(product)} />
       <nav aria-label="Breadcrumb" style={{ marginBottom: "1rem" }}>
         <Link href="/catalog">&larr; Back to catalog</Link>
       </nav>

@@ -1,4 +1,5 @@
 import * as appInsights from "applicationinsights";
+import { hasAnalyticsConsent } from "./consent.ts";
 
 /**
  * Deployment SHA used to correlate telemetry with the revision that produced it.
@@ -52,11 +53,45 @@ export function getTelemetryClient(): appInsights.TelemetryClient | undefined {
 }
 
 /**
- * Emits a custom event tagged with the deployment SHA. No-ops when telemetry
- * is not configured (for example, local development without a connection
- * string).
+ * Emits a custom event tagged with the deployment SHA, gated on the
+ * visitor's analytics consent (read from the request's `Cookie` header).
+ * No-ops when telemetry is not configured, or when the visitor has not
+ * granted analytics consent — this event is visitor-attributable, so
+ * consent is required before anything is sent (privacy-conscious
+ * analytics, R-privacy).
  */
-export function trackEvent(name: string, properties: Record<string, string> = {}): void {
+export function trackEvent(
+  name: string,
+  properties: Record<string, string> = {},
+  cookieHeader: string | null | undefined
+): void {
+  if (!hasAnalyticsConsent(cookieHeader)) {
+    return;
+  }
+
+  const telemetryClient = getTelemetryClient();
+  if (!telemetryClient) {
+    return;
+  }
+
+  telemetryClient.trackEvent({
+    name,
+    properties: {
+      ...properties,
+      deploymentSha,
+    },
+  });
+}
+
+/**
+ * Emits a custom event for non-visitor-attributable operational signals
+ * (e.g. health checks), which carry no personal/visitor data and are
+ * therefore not subject to analytics consent gating.
+ */
+export function trackSystemEvent(
+  name: string,
+  properties: Record<string, string> = {}
+): void {
   const telemetryClient = getTelemetryClient();
   if (!telemetryClient) {
     return;
