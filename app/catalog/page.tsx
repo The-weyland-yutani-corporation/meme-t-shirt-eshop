@@ -7,9 +7,13 @@ import {
 } from "@/lib/catalog";
 import { getProvider } from "@/app/lib/provider";
 import { formatPrice } from "@/app/lib/format";
+import { JsonLd } from "@/app/lib/JsonLd";
+import { catalogItemListJsonLd } from "@/app/lib/structured-data";
 
 export const metadata = {
   title: "Catalog | Meme T-Shirt Eshop",
+  description:
+    "Browse meme t-shirts and apparel by category or search. Printed on demand and shipped worldwide.",
 };
 
 interface CatalogPageProps {
@@ -48,6 +52,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
 
   return (
     <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <JsonLd data={catalogItemListJsonLd(result.items)} />
       <h1>Catalog</h1>
 
       <form

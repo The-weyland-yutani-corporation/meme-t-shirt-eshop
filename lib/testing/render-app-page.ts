@@ -16,16 +16,53 @@ import fs from "node:fs";
 import Module from "node:module";
 import ts from "typescript";
 
-let cssStubInstalled = false;
+let extensionsInstalled = false;
 
 /** CSS has no meaning outside a bundler; stub it to an empty module. */
 function ensureCssStub(): void {
-  if (cssStubInstalled) return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (Module as any)._extensions[".css"] = (mod: NodeModule) => {
     mod.exports = {};
   };
-  cssStubInstalled = true;
+}
+
+/**
+ * Transpiles a `.ts`/`.tsx` source file to CommonJS via the TypeScript
+ * compiler API and `_compile`s it into the given module.
+ */
+function transpileAndCompile(mod: NodeModule, filename: string): void {
+  const source = fs.readFileSync(filename, "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      esModuleInterop: true,
+      target: ts.ScriptTarget.ES2020,
+    },
+    fileName: filename,
+  });
+
+  (mod as unknown as {
+    _compile(code: string, filename: string): void;
+  })._compile(outputText, filename);
+}
+
+/**
+ * Registers CommonJS extension handlers for `.ts`/`.tsx` so that, once the
+ * entry file is loaded via {@link loadAppModule}, any nested local
+ * `require`/import of other `.ts`/`.tsx` files (e.g. a page importing a
+ * shared lib module) is transpiled the same way instead of falling through
+ * to Node's default loader (which doesn't understand `.tsx` or strip
+ * types from re-exported `.ts` files it `require`s transitively).
+ */
+function ensureTsExtensionsInstalled(): void {
+  if (extensionsInstalled) return;
+  ensureCssStub();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Module as any)._extensions[".ts"] = transpileAndCompile;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Module as any)._extensions[".tsx"] = transpileAndCompile;
+  extensionsInstalled = true;
 }
 
 /**
@@ -36,27 +73,14 @@ function ensureCssStub(): void {
 export function loadAppModule<T = Record<string, unknown>>(
   absolutePath: string
 ): T {
-  ensureCssStub();
-
-  const source = fs.readFileSync(absolutePath, "utf8");
-  const { outputText } = ts.transpileModule(source, {
-    compilerOptions: {
-      jsx: ts.JsxEmit.ReactJSX,
-      module: ts.ModuleKind.CommonJS,
-      esModuleInterop: true,
-      target: ts.ScriptTarget.ES2020,
-    },
-    fileName: absolutePath,
-  });
+  ensureTsExtensionsInstalled();
 
   const moduleInstance = new Module(absolutePath);
   moduleInstance.filename = absolutePath;
   moduleInstance.paths = (Module as unknown as {
     _nodeModulePaths(path: string): string[];
   })._nodeModulePaths(process.cwd());
-  (moduleInstance as unknown as {
-    _compile(code: string, filename: string): void;
-  })._compile(outputText, absolutePath);
+  transpileAndCompile(moduleInstance, absolutePath);
 
   return moduleInstance.exports as T;
 }
