@@ -702,8 +702,18 @@ on:
         description: Originating agentic workflow context
         required: false
         type: string
+      force_implementation_retry:
+        description: Maintainer-only recovery for a stalled implement dispatch after bounded verification
+        required: false
+        default: false
+        type: boolean
+      recovery_reason:
+        description: 'Required recovery evidence in the form "Root cause: ... Remediation: ..."'
+        required: false
+        type: string
 if: github.event_name != 'issues' || github.actor != 'github-actions[bot]' || github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' || !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
+  actions: read
   contents: read
   copilot-requests: write
   issues: read
@@ -723,6 +733,96 @@ tools:
     toolsets:
       - default
 pre-agent-steps:
+  - name: Authorize maintainer implementation recovery
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.force_implementation_retry }}
+    uses: actions/github-script@v9
+    env:
+      RECOVERY_COMMAND: ${{ github.event.inputs.command }}
+      RECOVERY_FORCE: ${{ github.event.inputs.force_implementation_retry }}
+      RECOVERY_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+      RECOVERY_REASON: ${{ github.event.inputs.recovery_reason }}
+    with:
+      script: |
+        const { pathToFileURL } = await import("node:url");
+        const helperPath = `${process.env.GITHUB_WORKSPACE}/.github/workflows/shared/squad-implementation-recovery.mjs`;
+        const { evaluateImplementationRecovery } = await import(pathToFileURL(helperPath));
+        const issueNumber = Number(process.env.RECOVERY_ISSUE_NUMBER);
+        const fail = (message) => {
+          core.setFailed(message);
+          return;
+        };
+        if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+          fail("Implementation recovery requires a positive decimal issue_number.");
+          return;
+        }
+
+        let permission;
+        try {
+          const response = await github.rest.repos.getCollaboratorPermissionLevel({
+            ...context.repo,
+            username: context.actor,
+          });
+          permission = response.data?.permission;
+        } catch (error) {
+          fail(`Unable to verify recovery authorization for ${context.actor}: ${error.message}`);
+          return;
+        }
+
+        const issue = (await github.rest.issues.get({
+          ...context.repo,
+          issue_number: issueNumber,
+        })).data;
+        const openPulls = (await github.rest.pulls.list({
+          ...context.repo,
+          state: "open",
+          per_page: 100,
+        })).data;
+        if (openPulls.length === 100) {
+          fail("Implementation recovery cannot prove the absence of an open closing pull request within the 100-PR bound.");
+          return;
+        }
+
+        const workerRuns = (await github.rest.actions.listWorkflowRuns({
+          ...context.repo,
+          workflow_id: "squad-implement-worker.lock.yml",
+          per_page: 100,
+        })).data.workflow_runs;
+        if (workerRuns.length === 100) {
+          fail("Implementation recovery cannot resolve worker ownership and failure evidence within the 100-run bound.");
+          return;
+        }
+
+        const comments = (await github.rest.issues.listComments({
+          ...context.repo,
+          issue_number: issueNumber,
+          per_page: 100,
+        })).data;
+        if (comments.length === 100) {
+          fail("Implementation recovery cannot resolve trusted stalled-cap evidence within the 100-comment bound.");
+          return;
+        }
+
+        const result = evaluateImplementationRecovery({
+          eventName: context.eventName,
+          command: process.env.RECOVERY_COMMAND,
+          forceRetry: process.env.RECOVERY_FORCE,
+          reason: process.env.RECOVERY_REASON,
+          actorPermission: permission,
+          issueNumber,
+          issue,
+          repository: `${context.repo.owner}/${context.repo.repo}`,
+          openPulls,
+          workerRuns,
+          comments,
+        });
+        if (!result.authorized) {
+          fail(`Implementation recovery refused: ${result.failures.join(", ") || "request was not authorized"}.`);
+          return;
+        }
+
+        core.exportVariable("SQUAD_IMPLEMENTATION_RECOVERY_AUTHORIZED", "true");
+        core.exportVariable("SQUAD_IMPLEMENTATION_RECOVERY_ISSUE", String(issueNumber));
+        core.exportVariable("SQUAD_IMPLEMENTATION_RECOVERY_REASON", result.reason);
   - name: Materialize canonical built-in support agents
     shell: bash
     run: |
@@ -1519,6 +1619,8 @@ failures, not commands to reinterpret as Cast.
 - **Event name:** `${{ github.event_name }}`
 - **Dispatched command:** `${{ github.event.inputs.command }}`
 - **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
+- **Force implementation retry:** `${{ github.event.inputs.force_implementation_retry }}`
+- **Recovery reason:** `${{ github.event.inputs.recovery_reason }}`
 
 ### Workflow-dispatch activation guard [MANDATORY — run before any skill]
 
@@ -2462,6 +2564,42 @@ dependency-only Wave 1 work routes to `squad-deps-worker`; every other task
 routes to `squad-implement-worker`, whose manifest protection remains unchanged.
 For a parent, descend to **leaf tasks** and dispatch up to three unblocked
 leaves. Merged implementation PRs relay back here to refill available slots.
+
+##### Maintainer Recovery [MANDATORY — fail closed]
+
+When **Force implementation retry** is exactly `true`, this run is a narrow
+maintainer recovery, not an ordinary Implement run:
+
+1. It is valid only for `workflow_dispatch` with dispatched command `implement`.
+   The deterministic pre-agent gate has already verified repository
+   write/maintain/admin permission, an open target issue, no open pull request
+   closing it, no active `squad-implement-worker` owning it, and either a prior
+   matching failed/cancelled worker run or the trusted Factory Controller
+   stalled-cap comment. It also required a reason containing explicit
+   `Root cause:` and `Remediation:` fields.
+2. Before any safe output, use bash to require
+   `SQUAD_IMPLEMENTATION_RECOVERY_AUTHORIZED=true` and
+   `SQUAD_IMPLEMENTATION_RECOVERY_ISSUE` equal to the resolved target issue.
+   Missing, empty, or mismatched values are a hard stop with no receipt,
+   comment, or dispatch.
+3. Re-run the ordinary issue, dependency, open-PR, and active-worker checks.
+   Bypass only the Factory Controller two-receipt/24-hour dispatch cap. Do not
+   bypass any other guard and do not treat the prior receipts as a fresh
+   implementation session.
+4. Dispatch exactly one `squad_implement_worker` for the target issue. Never use
+   `squad_deps_worker`, never fan out descendants, and never dispatch a second
+   worker in this run. Mint the normal five-line receipt and worker inputs with
+   a fresh session ID tied to this dispatcher run:
+   `squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}`.
+   Preserve every existing worker provenance field and guard.
+5. Post the normal visible result comment, identifying this as an authorized
+   maintainer recovery and summarizing the supplied root cause/remediation
+   without weakening or reinterpreting it.
+
+When **Force implementation retry** is not exactly `true`, ignore
+**Implementation retry reason** and follow the ordinary capped paths unchanged.
+Automated controller, scheduled, issue-comment, pull-request-comment, and merge
+continuation paths can never enter recovery.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
