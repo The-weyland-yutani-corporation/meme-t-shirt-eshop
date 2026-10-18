@@ -49,7 +49,7 @@ export function hasAnalyticsConsent(cookieHeader: string | null | undefined): bo
 /** Builds a `Set-Cookie`-ready string for writing the consent decision. */
 export function buildConsentCookieString(state: "granted" | "denied"): string {
   const value = state === "granted" ? CONSENT_GRANTED : CONSENT_DENIED;
-  return `${CONSENT_COOKIE_NAME}=${value}; Max-Age=${ONE_YEAR_SECONDS}; Path=/; SameSite=Lax`;
+  return `${CONSENT_COOKIE_NAME}=${value}; Max-Age=${ONE_YEAR_SECONDS}; Path=/; SameSite=Lax; Secure`;
 }
 
 /** Client-side: reads the consent cookie from `document.cookie`. */
