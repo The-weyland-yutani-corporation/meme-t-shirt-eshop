@@ -94,6 +94,8 @@ jobs:
 
       - name: Install pinned gh-aw
         uses: github/gh-aw-actions/setup-cli@924af5fdc64061cfbf66fb584c8b07e2ac230c60 # v0.89.21
+        with:
+          version: v0.89.21
 
       - name: Verify gh-aw version
         shell: bash
