@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -9,6 +10,7 @@ import {
   inspectProduction,
   parseHealthPayload,
   pollReachability,
+  productionSiteUrl,
   runSlotDeployment,
   selectDeploymentOperation,
   selectDeploymentSha,
@@ -16,6 +18,10 @@ import {
 
 const oldSha = "a".repeat(40);
 const newSha = "b".repeat(40);
+const deploymentWorkflow = readFileSync(
+  new URL("../workflows/deploy.yml", import.meta.url),
+  "utf8",
+);
 
 function workflowRunEvent(overrides = {}) {
   return {
@@ -269,6 +275,34 @@ test("first-deployment preflight fails closed on invalid URL configuration", () 
   assert.throws(
     () => healthUrl("https://example.test", "api/health"),
     /must start with \//,
+  );
+});
+
+test("production site URL accepts only a canonical HTTPS origin", () => {
+  assert.equal(
+    productionSiteUrl("https://memeteeshop-df-82889e2d.azurewebsites.net"),
+    "https://memeteeshop-df-82889e2d.azurewebsites.net",
+  );
+  assert.throws(() => productionSiteUrl(""), /is required/);
+  assert.throws(() => productionSiteUrl("http://example.test"), /must use HTTPS/);
+  assert.throws(
+    () => productionSiteUrl("https://user:pass@example.test"),
+    /must not contain credentials/,
+  );
+  assert.throws(
+    () => productionSiteUrl("https://example.test/store"),
+    /without a path, query, or fragment/,
+  );
+});
+
+test("deployment build validates and exports the configured production site URL", () => {
+  assert.match(
+    deploymentWorkflow,
+    /- name: Validate production build configuration[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?deployment-control\.mjs validate-site-url[\s\S]*?--url "\$NEXT_PUBLIC_SITE_URL"/,
+  );
+  assert.match(
+    deploymentWorkflow,
+    /- name: Build Next\.js application[\s\S]*?DEPLOYMENT_SHA: \$\{\{ needs\.resolve\.outputs\.deployment_sha \}\}[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?run: npm run build/,
   );
 });
 

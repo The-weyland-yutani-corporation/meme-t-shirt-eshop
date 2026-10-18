@@ -306,6 +306,20 @@ export function healthUrl(baseUrl, healthPath) {
   return new URL(healthPath, `${base.origin}/`).href;
 }
 
+export function productionSiteUrl(value) {
+  const siteUrl = new URL(required(value, "NEXT_PUBLIC_SITE_URL"));
+  if (siteUrl.protocol !== "https:") {
+    throw new Error("NEXT_PUBLIC_SITE_URL must use HTTPS");
+  }
+  if (siteUrl.username || siteUrl.password) {
+    throw new Error("NEXT_PUBLIC_SITE_URL must not contain credentials");
+  }
+  if (siteUrl.pathname !== "/" || siteUrl.search || siteUrl.hash) {
+    throw new Error("NEXT_PUBLIC_SITE_URL must be an HTTPS origin without a path, query, or fragment");
+  }
+  return siteUrl.origin;
+}
+
 function runAz(args) {
   const result = spawnSync("az", args, {
     encoding: "utf8",
@@ -351,6 +365,11 @@ async function commandProbe(args) {
     delayMs: Number(optionalArgument("delay-ms", args, "2000")),
   });
   console.log(`URL is reachable and returned HTTP ${result.status}.`);
+}
+
+function commandValidateSiteUrl(args) {
+  const siteUrl = productionSiteUrl(argument("url", args));
+  console.log(`Validated production site URL ${siteUrl}.`);
 }
 
 async function commandInspect(args) {
@@ -515,6 +534,7 @@ async function commandStatus(args) {
 async function main(args) {
   const command = args.shift();
   if (command === "resolve") return commandResolve(args);
+  if (command === "validate-site-url") return commandValidateSiteUrl(args);
   if (command === "probe") return commandProbe(args);
   if (command === "inspect") return commandInspect(args);
   if (command === "orchestrate") return commandOrchestrate(args);

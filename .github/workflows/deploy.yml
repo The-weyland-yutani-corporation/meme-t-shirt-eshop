@@ -156,9 +156,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate production build configuration
+        env:
+          NEXT_PUBLIC_SITE_URL: ${{ vars.AZURE_PRODUCTION_URL }}
+        run: >-
+          node .github/scripts/deployment-control.mjs validate-site-url
+          --url "$NEXT_PUBLIC_SITE_URL"
+
       - name: Build Next.js application
         env:
           DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.AZURE_PRODUCTION_URL }}
         run: npm run build
 
       - name: Create deployment package
