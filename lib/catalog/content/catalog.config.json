@@ -11,10 +11,10 @@
     {
       "id": "classic-meme-tee",
       "name": "Classic Meme Tee",
-      "description": "A soft-cotton unisex tee with a classic meme print.",
+      "description": "An original terminal-inspired tee for days when your brain is still buffering. Concept artwork for this simulated store.",
       "categoryId": "t-shirts",
       "tagIds": ["bestseller"],
-      "images": ["/images/classic-meme-tee-front.png"],
+      "images": ["/images/classic-meme-tee.svg"],
       "variants": [
         {
           "id": "classic-meme-tee-s-black",
@@ -43,10 +43,10 @@
     {
       "id": "limited-drop-hoodie",
       "name": "Limited Drop Hoodie",
-      "description": "Heavyweight hoodie from a limited seasonal drop.",
+      "description": "An original offline-mode hoodie concept. This demo variant is intentionally unavailable so you can explore stock handling.",
       "categoryId": "hoodies",
       "tagIds": ["limited-edition"],
-      "images": ["/images/limited-drop-hoodie-front.png"],
+      "images": ["/images/limited-drop-hoodie.svg"],
       "variants": [
         {
           "id": "limited-drop-hoodie-l-grey",

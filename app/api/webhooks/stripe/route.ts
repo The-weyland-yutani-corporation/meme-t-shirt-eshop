@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripeClient } from "@/lib/stripe/client";
+import { getStripeClient } from "../../../../lib/stripe/client.ts";
+import { isStripeSandboxEnabled } from "../../../../lib/stripe/sandbox.ts";
 import {
   markEventProcessed,
   unmarkEventProcessed,
   upsertOrderFromCheckoutSession,
-} from "@/lib/orders/store";
+} from "../../../../lib/orders/store.ts";
 
 // Stripe requires the raw request body for signature verification, so this
 // route must not run through any body-parsing middleware.
@@ -18,6 +19,9 @@ export const runtime = "nodejs";
  * ID are acknowledged with 200 but not re-applied.
  */
 export async function POST(request: NextRequest) {
+  if (!isStripeSandboxEnabled()) {
+    return NextResponse.json({ error: "Stripe sandbox is disabled." }, { status: 403 });
+  }
   const signature = request.headers.get("stripe-signature");
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -50,6 +54,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (event.livemode || ("livemode" in event.data.object && event.data.object.livemode)) {
+    return NextResponse.json({ error: "Live events are not permitted." }, { status: 400 });
+  }
   // Idempotency: skip already-processed events so retried/duplicate
   // deliveries never double-process an order.
   const isNewEvent = markEventProcessed(event.id);
@@ -67,7 +74,7 @@ export async function POST(request: NextRequest) {
           status: "paid",
           amountTotal: session.amount_total ?? null,
           currency: session.currency ?? null,
-          customerEmail: session.customer_details?.email ?? null,
+          customerEmail: null,
         });
         break;
       }
@@ -78,7 +85,7 @@ export async function POST(request: NextRequest) {
           status: "failed",
           amountTotal: session.amount_total ?? null,
           currency: session.currency ?? null,
-          customerEmail: session.customer_details?.email ?? null,
+          customerEmail: null,
         });
         break;
       }
@@ -89,7 +96,7 @@ export async function POST(request: NextRequest) {
           status: "failed",
           amountTotal: session.amount_total ?? null,
           currency: session.currency ?? null,
-          customerEmail: session.customer_details?.email ?? null,
+          customerEmail: null,
         });
         break;
       }

@@ -35,7 +35,7 @@ interface AppMetadata {
  * sourced from the layout's `metadata` export (Next.js injects this via its
  * head-management machinery, which this lightweight harness does not run).
  */
-function renderFullPage(pageFile: string): string {
+function renderFullPage(pageFile: string, content?: React.ReactElement): string {
   const layoutModule = loadAppModule<{
     default: (props: LayoutProps) => React.ReactElement;
     metadata?: AppMetadata;
@@ -45,7 +45,7 @@ function renderFullPage(pageFile: string): string {
   }>(path.join(appDir, pageFile));
 
   const bodyHtml = renderToStaticMarkup(
-    layoutModule.default({ children: pageModule.default() })
+    layoutModule.default({ children: content ?? pageModule.default() })
   );
   const title = layoutModule.metadata?.title ?? "";
 
@@ -78,3 +78,24 @@ test("home page document has a lang attribute and a non-empty title", async () =
   assert.equal(dom.window.document.documentElement.getAttribute("lang"), "en");
   assert.ok(dom.window.document.title.trim().length > 0);
 });
+
+for (const [file, props] of [
+  ["catalog/page.tsx", { searchParams: Promise.resolve({}) }],
+  ["catalog/[productId]/page.tsx", { params: Promise.resolve({ productId: "classic-meme-tee" }) }],
+  ["catalog/[productId]/page.tsx", { params: Promise.resolve({ productId: "limited-drop-hoodie" }) }],
+  ["checkout/page.tsx", { searchParams: Promise.resolve({ variantId: "classic-meme-tee-s-black", quantity: "2" }) }],
+  ["checkout/page.tsx", { searchParams: Promise.resolve({ variantId: "missing", quantity: "1.5" }) }],
+  ["orders/page.tsx", { searchParams: Promise.resolve({ variantId: "classic-meme-tee-s-black", quantity: "2", status: "completed" }) }],
+  ["orders/page.tsx", { searchParams: Promise.resolve({ variantId: "classic-meme-tee-s-black", quantity: "2", status: "cancelled" }) }],
+] as const) {
+  test(`${file} ${JSON.stringify(props)} has no automated accessibility violations`, async () => {
+    const page = loadAppModule<{ default(props: unknown): Promise<React.ReactElement> }>(path.join(appDir, file));
+    const html = renderFullPage(file, await page.default(props));
+    const results = await runAxe(html);
+    assert.deepEqual(results.violations.map((violation) => violation.id), []);
+    if (file === "orders/page.tsx") {
+      assert.match(html, /No payment was taken/);
+      assert.match(html, /not a stored order/);
+    }
+  });
+}

@@ -4,16 +4,16 @@ import {
   isProductInStock,
   listCategoryIds,
   lowestPricedVariant,
-} from "@/lib/catalog";
-import { getProvider } from "@/app/lib/provider";
-import { formatPrice } from "@/app/lib/format";
-import { JsonLd } from "@/app/lib/JsonLd";
-import { catalogItemListJsonLd } from "@/app/lib/structured-data";
+} from "../../lib/catalog/index.ts";
+import { getProvider } from "../lib/provider.ts";
+import { formatPrice } from "../lib/format.ts";
+import { JsonLd } from "../lib/JsonLd.tsx";
+import { catalogItemListJsonLd } from "../lib/structured-data.ts";
 
 export const metadata = {
   title: "Catalog | Meme T-Shirt Eshop",
   description:
-    "Browse meme t-shirts and apparel by category or search. Printed on demand and shipped worldwide.",
+    "Browse original apparel concepts and try a simulated purchase. No payment or shipment.",
 };
 
 interface CatalogPageProps {
@@ -51,15 +51,17 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+    <main id="main-content" className="container">
       <JsonLd data={catalogItemListJsonLd(result.items)} />
+      <p className="eyebrow">The mood board</p>
       <h1>Catalog</h1>
+      <p className="lede">Original concepts for your everyday internet mood. Demo availability only — no real stock or fulfillment.</p>
 
       <form
         role="search"
         aria-label="Catalog search and filters"
         method="get"
-        style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" }}
+        className="filters"
       >
         <label htmlFor="catalog-search">
           Search
@@ -93,6 +95,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
         <button type="submit" style={{ alignSelf: "flex-end" }}>
           Apply
         </button>
+        <Link href="/catalog">Clear filters</Link>
       </form>
 
       <p aria-live="polite">
@@ -101,24 +104,18 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
           : `Showing ${result.items.length} of ${result.total} product(s).`}
       </p>
 
-      <ul
-        style={{
-          listStyle: "none",
-          padding: 0,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-          gap: "1.25rem",
-        }}
-      >
+      <ul className="product-grid">
         {result.items.map((product) => {
           const variant = lowestPricedVariant(product);
           const inStock = isProductInStock(product);
           return (
             <li
               key={product.id}
-              style={{ border: "1px solid #ddd", borderRadius: "8px", padding: "1rem" }}
+              className="product-card"
             >
               <Link href={`/catalog/${product.id}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={product.images[0]} alt={`${product.name} original concept artwork`} width="640" height="640" />
                 <h2 style={{ fontSize: "1.1rem" }}>{product.name}</h2>
               </Link>
               <p>{product.description}</p>
@@ -127,7 +124,8 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                   From {formatPrice(variant.priceCents, variant.currency)}
                 </p>
               )}
-              <p>{inStock ? "In stock" : "Out of stock"}</p>
+              <p className="stock">{inStock ? "Available to simulate" : "Unavailable in demo"}</p>
+              <Link href={`/catalog/${product.id}`}>View design & variants →</Link>
             </li>
           );
         })}

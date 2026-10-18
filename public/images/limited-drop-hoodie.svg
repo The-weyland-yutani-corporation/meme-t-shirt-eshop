@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-labelledby="title desc">
+  <title id="title">Original Offline Mode hoodie concept</title>
+  <desc id="desc">A grey hoodie on a peach background with an original orange offline-mode emblem.</desc>
+  <rect width="640" height="640" rx="32" fill="#ffe8d8"/>
+  <circle cx="320" cy="310" r="235" fill="#ffd2b3"/>
+  <path d="M247 179q-17-105 73-105t73 105l94 67 43 234-73 17-37-169v212H220V328l-37 169-73-17 43-234z" fill="#646776" stroke="#333745" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M247 179q73 74 146 0M285 208v92m70-92v92" fill="none" stroke="#d6d6df" stroke-width="7"/>
+  <circle cx="320" cy="345" r="52" fill="#ffba83"/>
+  <path d="M320 309v37m-25-24a36 36 0 1 0 50 0" fill="none" stroke="#333745" stroke-width="9"/>
+  <text x="320" y="435" text-anchor="middle" font-family="monospace" font-size="23" font-weight="bold" fill="#fff">OFFLINE MODE</text>
+  <path d="m267 466-20 42h146l-20-42z" fill="#535664"/>
+</svg>

@@ -128,3 +128,94 @@ All configuration above — the resource group, managed identity and federated
 credential, GitHub environments, repository variables/secrets, and the
 reviewed Bicep deployment — is operator-owned per the "Operator prerequisites"
 section above. The autonomous workflow never creates or modifies any of it.
+
+## Accelerator demonstration: scope and verification
+
+The [local simulated checkout](../docs/demo.md) needs no Azure resources,
+payment-provider credentials, or fulfillment connection. Prefer local setup for
+a workshop. The existence of this template and pipeline is not evidence that
+the accelerator has been deployed or independently rehearsed on Azure; both
+remain unverified until an operator records results for a specific commit.
+
+For the default demo, leave `STRIPE_SANDBOX_ENABLED` and `STRIPE_SECRET_KEY`
+unset in both production and staging. The independent `POST /api/checkout` API
+only enables with `STRIPE_SANDBOX_ENABLED=true` and a valid `sk_test_` test key;
+it then makes Stripe test-service calls. It is not a deployment prerequisite or
+fallback. If separately approved, configure test secrets privately through the
+operator's secret-management process, review slot-specific settings and swap
+behavior, and never add key values to Bicep, logs, or source control. See
+[the validated request contract](../docs/setup.md).
+
+The demonstration itself uses `/catalog` → `/checkout` → `/orders`: one variant
+and quantity are URL-described, with no persistent cart or stored order.
+Outcome URLs are editable and references deterministic; current catalog values
+are resolved again, and no stock is reserved. Configure access/telemetry policies
+accordingly: even synthetic selection URLs can appear in logs and browser
+history, and no PII or credentials belong in query parameters.
+
+Provisioning is manual, never an automatic accelerator setup step. After the
+prerequisites above are reviewed, an operator may inspect the proposed changes
+and deploy the existing template using Azure CLI:
+
+```sh
+az account show --query '{subscription:name,id:id}' --output table
+az deployment group what-if \
+  --resource-group <reviewed-dedicated-resource-group> \
+  --template-file infra/main.bicep \
+  --parameters appName=<globally-unique-app-name> appServicePlanSku=S1
+az deployment group create \
+  --resource-group <reviewed-dedicated-resource-group> \
+  --template-file infra/main.bicep \
+  --parameters appName=<globally-unique-app-name> appServicePlanSku=S1
+```
+
+Replace placeholders only after confirming the intended subscription, dedicated
+resource group, region, naming, and budget. The resource group must already
+exist. `what-if` previews changes; `create` provisions billable resources.
+Neither command establishes GitHub OIDC trust, RBAC, environment reviewers, or
+repository settings. Review those separately, including federated issuer,
+audience, environment-bound subject, and least-privilege scope. Keep preflight,
+exact-SHA health checks, approvals, rollback, protected-path/provenance gates,
+and generated immutable workflow controls intact.
+
+## Cost and telemetry review
+
+- The App Service plan is billable while provisioned, even with no workshop
+  traffic; stopping the web app does not remove the plan's charges.
+- Staging slots consume plan capacity. Review current SKU slot allowances,
+  capacity, and any additional service charges rather than assuming the
+  staging environment is free.
+- Application Insights and Log Analytics can incur ingestion, retention, and
+  query-related charges. The template sets workspace retention to 30 days;
+  review current pricing, limits, sampling, budgets, and alerts with the cost
+  owner. There is no fixed-price or zero-cost promise.
+- Review both production and staging telemetry, access, and retention before
+  enabling collection. Send only approved operational signals; never record
+  customer/cart payloads, addresses, payment details, tokens, or secrets.
+  Synthetic data and deployment identifiers can still reveal operational
+  context. Local telemetry is unnecessary for the demo.
+
+## Operator-owned teardown
+
+1. Disable deployment via `AZURE_DEPLOY_ENABLED` and confirm no deployment is
+   running. Record any evidence needed for the approved retention period.
+2. Review the selected subscription and **every resource** in the dedicated
+   resource group. Confirm it contains no shared or unrelated services:
+
+   ```sh
+   az resource list --resource-group <reviewed-dedicated-resource-group> --output table
+   ```
+
+3. Only after explicit owner approval, delete that dedicated resource group:
+
+   ```sh
+   az group delete --name <reviewed-dedicated-resource-group>
+   ```
+
+   This is destructive and is intentionally not automated or passed `--yes`.
+   Do not use group deletion for a shared environment; obtain a reviewed
+   resource-specific removal plan instead.
+4. Verify deletion has completed and review remaining billable resources and
+   retained logs. Remove only dedicated, approved federated credentials/RBAC
+   assignments and stale repository configuration; do not remove shared
+   identities. Confirm final costs with the subscription owner.

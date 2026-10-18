@@ -9,16 +9,19 @@ let cachedClient: Stripe | null = null;
  * without the secret configured.
  */
 export function getStripeClient(): Stripe {
-  if (cachedClient) {
-    return cachedClient;
-  }
-
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) {
     throw new Error(
       "STRIPE_SECRET_KEY is not configured. Set it in the environment to use Stripe Checkout."
     );
   }
+  if (process.env.STRIPE_SANDBOX_ENABLED !== "true") {
+    throw new Error("Stripe sandbox is disabled. Set STRIPE_SANDBOX_ENABLED=true explicitly.");
+  }
+  if (!/^sk_test_[A-Za-z0-9_]+$/.test(secretKey)) {
+    throw new Error("Only a Stripe test secret key is permitted.");
+  }
+  if (cachedClient) return cachedClient;
 
   cachedClient = new Stripe(secretKey, {
     apiVersion: "2025-02-24.acacia",

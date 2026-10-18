@@ -12,10 +12,27 @@ import { test } from "node:test";
 import { MockPrintProviderAdapter } from "../mock-adapter.ts";
 import { ProviderNotFoundError, ProviderOrderError } from "../types.ts";
 import type { PrintProviderAdapter } from "../types.ts";
+import { loadCatalogConfig } from "../../content/catalog-config.ts";
 
 function makeAdapter(): PrintProviderAdapter {
   return new MockPrintProviderAdapter();
 }
+
+test("default mock catalog matches validated content and cannot be mutated by callers", async () => {
+  const adapter = makeAdapter();
+  const products = await adapter.listProducts();
+  assert.deepEqual(products, (await loadCatalogConfig()).products);
+  products[0].variants[0].priceCents = 1;
+  assert.equal((await adapter.getVariant(products[0].variants[0].id)).priceCents, 2499);
+});
+
+test("mock orders reject unavailable variants and non-integer or excessive quantities", async () => {
+  const adapter = makeAdapter();
+  for (const quantity of [1.5, NaN, Infinity, 11]) {
+    await assert.rejects(() => adapter.createOrder([{ variantId: "classic-meme-tee-s-black", quantity }], validShippingAddress), ProviderOrderError);
+  }
+  await assert.rejects(() => adapter.createOrder([{ variantId: "limited-drop-hoodie-l-grey", quantity: 1 }], validShippingAddress), ProviderOrderError);
+});
 
 const validShippingAddress = {
   name: "Ellen Ripley",

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meme Merch — captioned screenshot walkthrough</title>
+  <style>
+    body { margin: 0; font: 1rem/1.6 system-ui, sans-serif; color: #163b2f; background: #f4f6ef; }
+    main { max-width: 1100px; margin: auto; padding: 2rem 1rem; }
+    h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
+    a { color: #14532d; }
+    figure { margin: 2rem 0; padding: 1rem; border: 1px solid #a5b7ab; border-radius: 1rem; background: white; }
+    img { display: block; width: 100%; height: auto; border: 1px solid #dce3dd; }
+    figcaption { padding: 1rem 0 0; }
+    .notice { padding: 1rem; border-left: 4px solid #166534; background: #e2eddc; }
+  </style>
+</head>
+<body>
+<main>
+  <p>Presenter backup · synthetic data · local browser captures</p>
+  <h1>From merchandise discovery to a simulated outcome</h1>
+  <p class="notice">This is a captioned screenshot walkthrough, not a video recording or proof of deployment.
+    No payment, shipment, or customer data is involved. Catalog listing and redistribution remain subject to owner approval.</p>
+  <nav aria-label="Walkthrough navigation">
+    <a href="#discover">Discover</a> · <a href="#review">Review</a> ·
+    <a href="#outcome">Outcome</a> · <a href="#boundaries">Boundaries</a>
+  </nav>
+  <figure id="discover">
+    <img src="desktop-home.png" alt="Meme Merch landing page with simulation boundary and catalog entry point">
+    <figcaption><strong>1. Set the context.</strong> Retail teams can evaluate a merchandise journey before investing in live integrations.
+      Explain that this demonstration is synthetic and requires no credentials.</figcaption>
+  </figure>
+  <figure>
+    <img src="desktop-search.png" alt="Catalog filtered to the Classic Meme Tee">
+    <figcaption><strong>2. Find relevant merchandise.</strong> Search and filtering connect shopper intent to catalog context.
+      The sample tee has available variants; the hoodie provides an unavailable-stock scenario.</figcaption>
+  </figure>
+  <figure>
+    <img src="desktop-product.png" alt="Classic Meme Tee product details with variants and quantity selection">
+    <figcaption><strong>3. Select a variant.</strong> Inspect original local artwork, price, and availability.
+      Select an available tee variant and quantity two.</figcaption>
+  </figure>
+  <figure id="review">
+    <img src="desktop-checkout.png" alt="Server-calculated checkout review showing two tees at 49.98 US dollars and zero charged">
+    <figcaption><strong>4. Review the intended action.</strong> The server uses catalog prices and stock.
+      Two sample tees total USD 49.98; the charged amount is zero. No tax or delivery quotation is implied.</figcaption>
+  </figure>
+  <figure>
+    <img src="desktop-cancelled.png" alt="Explicit simulated cancellation with no payment or shipment">
+    <figcaption><strong>5. Cancel safely.</strong> The cancellation outcome is not a successful sale.
+      Return to the catalog to begin another selection.</figcaption>
+  </figure>
+  <figure id="outcome">
+    <img src="desktop-confirmation.png" alt="Simulated purchase confirmation with demo reference and no payment or shipment">
+    <figcaption><strong>6. Complete the simulation.</strong> A deterministic reference and synthetic status make the outcome concrete.
+      The URL describes this reproducible scenario; it is not a stored order or proof of purchase.</figcaption>
+  </figure>
+  <figure>
+    <img src="desktop-unavailable.png" alt="Unavailable hoodie product with no enabled purchase option">
+    <figcaption><strong>7. Show a boundary.</strong> Unavailable stock cannot proceed through review.
+      Discuss where real inventory authority and reservation would belong.</figcaption>
+  </figure>
+  <figure id="boundaries">
+    <img src="architecture.svg" alt="Implemented simulation, separate integrations, Azure hosting pattern, and future production components">
+    <figcaption><strong>8. Agree on the next action.</strong> Select one campaign, name business and engineering owners,
+      and agree on a bounded pilot. Durable orders, live integrations, security/privacy review, licensing,
+      and independent operational evidence remain separate decisions.</figcaption>
+  </figure>
+  <p>See <a href="README.md">capture provenance and validation evidence</a> and
+    <a href="../demo.md">the presenter script</a>. No full-length captioned video is supplied by this pack.</p>
+</main>
+</body>
+</html>

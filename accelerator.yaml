@@ -1,0 +1,94 @@
+# Draft content model only. Catalog requirements could not be accessed.
+# Do not submit until an authorized contributor maps this to the current schema.
+name: "Meme Merch: Azure Storefront Accelerator"
+summary: >-
+  A credential-free Next.js merchandise demo connecting synthetic catalog
+  discovery to a simulated purchase outcome, with Azure deployment patterns.
+repository: "https://github.com/The-weyland-yutani-corporation/meme-t-shirt-eshop"
+status: "local-demo-candidate"
+desired_readiness: "catalog-ready"
+customer_scope: "Reusable"
+industries:
+  - "Retail"
+  - "Consumer Goods"
+personas:
+  - "Commerce product owner"
+  - "Developer"
+  - "Platform engineer"
+business_problem: >-
+  Teams need a concrete way to evaluate merchandise storefront and integration
+  requirements before investing in a larger implementation.
+business_outcome: >-
+  A demonstrated synthetic shopper journey, reusable technical patterns,
+  and an agreed customer pilot backlog.
+technologies:
+  - "Next.js"
+  - "TypeScript"
+  - "Azure App Service"
+  - "Azure Monitor Application Insights"
+  - "Bicep"
+  - "GitHub Actions"
+integrations:
+  - name: "Stripe"
+    status: "Separate sandbox API example; not used by the core simulation"
+  - name: "Printful"
+    status: "Adapter example; storefront uses a mock provider"
+demo:
+  deployed_url: null
+  recording_url: null
+  guide: "docs/demo.md"
+  evidence: "docs/assets/README.md"
+  walkthrough: "docs/assets/walkthrough.html"
+  screenshots:
+    - "docs/assets/desktop-home.png"
+    - "docs/assets/desktop-catalog.png"
+    - "docs/assets/desktop-search.png"
+    - "docs/assets/desktop-product.png"
+    - "docs/assets/desktop-checkout.png"
+    - "docs/assets/desktop-cancelled.png"
+    - "docs/assets/desktop-confirmation.png"
+    - "docs/assets/desktop-unavailable.png"
+    - "docs/assets/desktop-invalid-selection.png"
+    - "docs/assets/mobile-home.png"
+    - "docs/assets/mobile-product.png"
+    - "docs/assets/mobile-checkout.png"
+  scope:
+    - "Validated catalog search, filtering, variants, and availability"
+    - "Server-priced credential-free simulated checkout"
+    - "Explicit simulated completion and cancellation outcomes"
+    - "Local original product artwork"
+prerequisites:
+  local:
+    - "Node.js 22"
+    - "npm"
+  azure:
+    - "Azure subscription and reviewed resource budget"
+    - "Operator-configured OIDC identity and GitHub environments"
+limitations:
+  - "No real payment or shipment is performed by the demo."
+  - "Simulation is not a durable order ledger."
+  - "Stripe webhook example orders and deduplication are process-local."
+  - "Azure deployment and independent presenter rehearsal are not verified."
+  - "Not approved for real transactions."
+engagement:
+  motion: "Discovery workshop followed by a bounded sandbox pilot"
+  guide: "docs/readiness.md"
+  call_to_action: "Select one campaign and agree on pilot acceptance criteria"
+documentation:
+  setup: "docs/setup.md"
+  architecture: "docs/architecture.md"
+  deployment: "infra/README.md"
+  security: "SECURITY.md"
+  support: "SUPPORT.md"
+ownership:
+  maintainer: null
+  support_url: "https://github.com/The-weyland-yutani-corporation/meme-t-shirt-eshop/issues"
+license: null
+submission:
+  schema_verified: false
+  catalog_access: "GitHub API returned 404; web request redirected to enterprise SSO"
+  independent_reproduction_verified: false
+  azure_deployment_verified: false
+  security_review_completed: false
+  license_approved: false
+  owner_approved: false
