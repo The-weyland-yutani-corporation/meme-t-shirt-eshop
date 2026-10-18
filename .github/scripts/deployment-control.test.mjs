@@ -6,6 +6,7 @@ import {
   deploymentStatusForResults,
   fetchHealth,
   fetchReachability,
+  fetchSeoMetadata,
   healthUrl,
   inspectProduction,
   parseHealthPayload,
@@ -20,6 +21,14 @@ const oldSha = "a".repeat(40);
 const newSha = "b".repeat(40);
 const deploymentWorkflow = readFileSync(
   new URL("../workflows/deploy.yml", import.meta.url),
+  "utf8",
+);
+const robotsRoute = readFileSync(
+  new URL("../../app/robots.ts", import.meta.url),
+  "utf8",
+);
+const sitemapRoute = readFileSync(
+  new URL("../../app/sitemap.ts", import.meta.url),
   "utf8",
 );
 
@@ -159,6 +168,62 @@ test("rejects malformed HTTP 200 health payloads", async () => {
   assert.throws(
     () => parseHealthPayload(JSON.stringify({ status: "ok", deploymentSha: "bad\noutput" })),
     /safe deploymentSha/,
+  );
+});
+
+test("live SEO verification uses cache-busted requests and rejects stale metadata", async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({ url: String(url), options });
+    if (String(url).includes("robots.txt")) {
+      return new Response(
+        "User-Agent: *\nAllow: /\n\nSitemap: https://shop.example.test/sitemap.xml\n",
+      );
+    }
+    return new Response(
+      "<urlset><url><loc>https://shop.example.test/</loc></url></urlset>",
+    );
+  };
+  await fetchSeoMetadata({
+    baseUrl: "https://staging.example.test",
+    expectedSiteUrl: "https://shop.example.test",
+    cacheKey: newSha,
+    fetchImpl,
+  });
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every(({ url }) => url.includes(`deployment=${newSha}`)));
+  assert.ok(
+    requests.every(({ options }) => options.headers["cache-control"] === "no-cache"),
+  );
+
+  await assert.rejects(
+    fetchSeoMetadata({
+      baseUrl: "https://staging.example.test",
+      expectedSiteUrl: "https://shop.example.test",
+      cacheKey: newSha,
+      fetchImpl: async (url) =>
+        new Response(
+          String(url).includes("robots.txt")
+            ? "Sitemap: https://example-redacted.invalid/sitemap.xml"
+            : "<urlset><url><loc>https://example-redacted.invalid/</loc></url></urlset>",
+        ),
+    }),
+    /robots\.txt does not reference/,
+  );
+
+  await assert.rejects(
+    fetchSeoMetadata({
+      baseUrl: "https://staging.example.test",
+      expectedSiteUrl: "https://shop.example.test",
+      cacheKey: newSha,
+      fetchImpl: async (url) =>
+        new Response(
+          String(url).includes("robots.txt")
+            ? "Sitemap: https://shop.example.test/sitemap.xml"
+            : "<urlset><url><loc>https://example-redacted.invalid/</loc></url></urlset>",
+        ),
+    }),
+    /sitemap\.xml contains a URL outside/,
   );
 });
 
@@ -306,6 +371,13 @@ test("deployment workflow uses the verified build path and configures the runtim
   );
 });
 
+test("SEO metadata routes always bypass persistent static output", () => {
+  for (const route of [robotsRoute, sitemapRoute]) {
+    assert.match(route, /export const dynamic = "force-dynamic"/);
+    assert.match(route, /export const revalidate = 0/);
+  }
+});
+
 function operations({ stagingFails = false, productionFails = false, rollbackFails = false } = {}) {
   const calls = [];
   let swapCount = 0;
@@ -416,7 +488,7 @@ test("rollback failure is surfaced explicitly and is not retried", async () => {
   assert.equal(ops.calls.filter((call) => call.startsWith("swap:")).length, 2);
 });
 
-test("idempotent rerun skips staging verification and swaps", async () => {
+test("idempotent rerun verifies live production before skipping deployment", async () => {
   const ops = operations();
   const result = await runSlotDeployment({
     expectedSha: newSha,
@@ -424,7 +496,30 @@ test("idempotent rerun skips staging verification and swaps", async () => {
     ...ops,
   });
   assert.deepEqual(result, { outcome: "already_deployed", swaps: 0, rollbacks: 0 });
-  assert.deepEqual(ops.calls, []);
+  assert.deepEqual(ops.calls, [`check-production:${newSha}`]);
+});
+
+test("same-SHA deployment replaces stale production content", async () => {
+  const ops = operations({ productionFails: true });
+  let productionChecks = 0;
+  ops.checkProduction = async (sha) => {
+    productionChecks += 1;
+    ops.calls.push(`check-production:${sha}`);
+    if (productionChecks === 1) throw new Error("stale SEO metadata");
+  };
+  const result = await runSlotDeployment({
+    expectedSha: newSha,
+    previousProduction: { status: "ok", deploymentSha: newSha },
+    ...ops,
+  });
+  assert.deepEqual(result, { outcome: "deployed", swaps: 1, rollbacks: 0 });
+  assert.deepEqual(ops.calls, [
+    `check-production:${newSha}`,
+    "check-staging",
+    "capture-state",
+    "swap:1",
+    `check-production:${newSha}`,
+  ]);
 });
 
 test("deployment evidence distinguishes success, failure, and cancellation", () => {

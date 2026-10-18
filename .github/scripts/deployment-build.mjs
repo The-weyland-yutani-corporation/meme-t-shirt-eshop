@@ -6,22 +6,27 @@ import { pathToFileURL } from "node:url";
 import { exactSha, productionSiteUrl } from "./deployment-control.mjs";
 
 export async function verifyBuiltSiteMetadata(sourceDirectory, expectedSiteUrl) {
-  const siteUrl = productionSiteUrl(expectedSiteUrl);
-  const robots = await readFile(
-    path.join(sourceDirectory, ".next", "server", "app", "robots.txt.body"),
-    "utf8",
+  productionSiteUrl(expectedSiteUrl);
+  const appRoutes = JSON.parse(
+    await readFile(
+      path.join(sourceDirectory, ".next", "app-path-routes-manifest.json"),
+      "utf8",
+    ),
   );
-  const sitemap = await readFile(
-    path.join(sourceDirectory, ".next", "server", "app", "sitemap.xml.body"),
-    "utf8",
+  const prerender = JSON.parse(
+    await readFile(
+      path.join(sourceDirectory, ".next", "prerender-manifest.json"),
+      "utf8",
+    ),
   );
 
-  if (!robots.includes(`Sitemap: ${siteUrl}/sitemap.xml`)) {
-    throw new Error("built robots.txt does not reference the configured production sitemap");
-  }
-  const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
-  if (locations.length === 0 || locations.some((location) => !location.startsWith(`${siteUrl}/`))) {
-    throw new Error("built sitemap.xml contains a URL outside the configured production origin");
+  for (const route of ["/robots.txt", "/sitemap.xml"]) {
+    if (!Object.values(appRoutes).includes(route)) {
+      throw new Error(`built application is missing ${route}`);
+    }
+    if (Object.hasOwn(prerender.routes ?? {}, route)) {
+      throw new Error(`${route} must not be prerendered into persistent static output`);
+    }
   }
 }
 
