@@ -5,9 +5,9 @@ local server at `http://127.0.0.1:3001`. No Azure deployment is evidenced.
 The Playwright MCP connection was unavailable; the installed ChromeDriver and
 Chromium captured actual rendered pages instead. No screenshots were fabricated.
 
-**Source revision:** the implementation commit adding this evidence pack, based
-on `e104596`. The runtime source fingerprint below identifies the exact source
-used for capture; documentation-only follow-up commits do not change that source.
+**Source revision:** [`18720ae17ede8491eba158936e1185a544ea3c3b`](https://github.com/The-weyland-yutani-corporation/meme-t-shirt-eshop/commit/18720ae17ede8491eba158936e1185a544ea3c3b),
+based on `e104596`. The runtime source fingerprint below identifies the exact
+source used for capture; documentation-only follow-up commits do not change it.
 
 - Next.js build ID: `sI-7_2eBcXcP7I8tm-Dha`.
 - Node: `v22.23.3`; npm: `10.9.9`.
@@ -77,6 +77,24 @@ The implementer also exercised production HTTP completion/cancellation/repeat,
 invalid input, unavailable stock, local assets, unknown-product 404, disabled
 Stripe, and health behavior. Expanded existing axe tests passed. Manual
 keyboard/assistive-technology and broad browser testing remain open.
+
+### Automated release review attempt
+
+The post-commit `parallel_validation` attempt on 2026-10-18 did **not** provide
+a successful review/security scan:
+
+- Its review wrapper reported no comments but the underlying review tool was
+  unavailable because the requested model was missing from the model registry.
+  Do not interpret the wrapper's “success” label as a completed code review.
+- CodeQL JavaScript analysis **failed**. Zero emitted alerts from a failed
+  analysis is not a clean scan.
+
+These tooling failures remain release gates, not application-test failures.
+They require a functioning review/scan environment and a rerun before sign-off.
+
+A separate read-only code-review agent inspected `HEAD^..HEAD` at `18720ae`
+and found no significant issues. It did not run tests or establish a successful
+CodeQL analysis. The secret scan of all 51 changed files reported no secrets.
 
 ## Missing or approval-dependent evidence
 

@@ -20,6 +20,8 @@
 > details, shipments, or external providers. Licensing, catalog schema verification,
 > independent presenter rehearsal, and Azure validation remain release gates.
 
+![Actual local demo landing page](docs/assets/desktop-home.png)
+
 ## Customer story
 
 Retail and brand teams need a practical way to test merchandise ideas without
