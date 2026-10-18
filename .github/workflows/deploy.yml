@@ -156,18 +156,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate production build configuration
-        env:
-          NEXT_PUBLIC_SITE_URL: ${{ vars.AZURE_PRODUCTION_URL }}
-        run: >-
-          node .github/scripts/deployment-control.mjs validate-site-url
-          --url "$NEXT_PUBLIC_SITE_URL"
-
-      - name: Build Next.js application
+      - name: Build and verify Next.js application
         env:
           DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
           NEXT_PUBLIC_SITE_URL: ${{ vars.AZURE_PRODUCTION_URL }}
-        run: npm run build
+        run: >-
+          node .github/scripts/deployment-build.mjs
+          --source .
+          --site-url "$NEXT_PUBLIC_SITE_URL"
+          --deployment-sha "$DEPLOYMENT_SHA"
 
       - name: Create deployment package
         id: package-layout
@@ -287,10 +284,11 @@ jobs:
           slot-name: staging
           package: app.zip
 
-      - name: Configure staging deployment identity
+      - name: Configure staging deployment settings
         if: ${{ steps.production.outputs.already_deployed != 'true' }}
         env:
           DEPLOYMENT_SHA: ${{ needs.resolve.outputs.deployment_sha }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.AZURE_PRODUCTION_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -298,7 +296,9 @@ jobs:
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_APP_NAME" \
             --slot staging \
-            --settings DEPLOYMENT_SHA="$DEPLOYMENT_SHA" \
+            --settings \
+              DEPLOYMENT_SHA="$DEPLOYMENT_SHA" \
+              NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" \
             --output none \
             --only-show-errors
 
