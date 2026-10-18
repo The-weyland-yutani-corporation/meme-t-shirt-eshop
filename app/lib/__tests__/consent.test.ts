@@ -36,7 +36,9 @@ test("buildConsentCookieString encodes the decision with a 1-year Max-Age", () =
   assert.match(granted, /^consent-analytics=granted/);
   assert.match(granted, /Max-Age=31536000/);
   assert.match(granted, /SameSite=Lax/);
+  assert.match(granted, /; Secure$/);
 
   const denied = buildConsentCookieString("denied");
   assert.match(denied, /^consent-analytics=denied/);
+  assert.match(denied, /; Secure$/);
 });

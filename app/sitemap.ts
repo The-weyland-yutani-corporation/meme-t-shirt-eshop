@@ -2,6 +2,9 @@ import type { MetadataRoute } from "next";
 import { getProvider } from "./lib/provider.ts";
 import { absoluteUrl } from "./lib/site-config.ts";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const provider = getProvider();
   const products = await provider.listProducts();
