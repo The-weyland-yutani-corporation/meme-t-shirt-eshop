@@ -6,8 +6,8 @@
  * rendered without live Printful credentials. Swapping in a real
  * `PrintfulAdapter` later only requires changing this file.
  */
-import { MockPrintProviderAdapter } from "@/lib/catalog";
-import type { PrintProviderAdapter } from "@/lib/catalog";
+import { MockPrintProviderAdapter } from "../../lib/catalog/adapters/mock-adapter.ts";
+import type { PrintProviderAdapter } from "../../lib/catalog/adapters/types.ts";
 
 let provider: PrintProviderAdapter | undefined;
 

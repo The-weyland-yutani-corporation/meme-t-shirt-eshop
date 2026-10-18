@@ -7,6 +7,8 @@
  */
 
 import type { Product, ProductVariant } from "../types.ts";
+import catalogContent from "../content/catalog.config.json" with { type: "json" };
+import { validateCatalogConfig } from "../content/catalog-config.ts";
 import {
   ProviderNotFoundError,
   ProviderOrderError,
@@ -19,7 +21,7 @@ import type {
 } from "./types.ts";
 
 export interface MockPrintProviderAdapterOptions {
-  /** Seed catalog data. Defaults to a small built-in sample catalog. */
+  /** Seed catalog data. Defaults to the validated, version-controlled catalog. */
   products?: Product[];
   /**
    * Variant ids that should be treated as unavailable/out of stock,
@@ -35,61 +37,7 @@ export interface MockPrintProviderAdapterOptions {
 }
 
 function defaultProducts(): Product[] {
-  return [
-    {
-      id: "classic-meme-tee",
-      name: "Classic Meme Tee",
-      description: "A soft-cotton unisex tee with a classic meme print.",
-      categoryId: "t-shirts",
-      tagIds: ["bestseller"],
-      images: ["/images/classic-meme-tee-front.png"],
-      variants: [
-        {
-          id: "classic-meme-tee-s-black",
-          productId: "classic-meme-tee",
-          name: "Black / S",
-          size: "S",
-          color: "Black",
-          priceCents: 2499,
-          currency: "USD",
-          providerVariantId: "pf-1001",
-          isAvailable: true,
-        },
-        {
-          id: "classic-meme-tee-m-black",
-          productId: "classic-meme-tee",
-          name: "Black / M",
-          size: "M",
-          color: "Black",
-          priceCents: 2499,
-          currency: "USD",
-          providerVariantId: "pf-1002",
-          isAvailable: true,
-        },
-      ],
-    },
-    {
-      id: "limited-drop-hoodie",
-      name: "Limited Drop Hoodie",
-      description: "Heavyweight hoodie from a limited seasonal drop.",
-      categoryId: "hoodies",
-      tagIds: ["limited-edition"],
-      images: ["/images/limited-drop-hoodie-front.png"],
-      variants: [
-        {
-          id: "limited-drop-hoodie-l-grey",
-          productId: "limited-drop-hoodie",
-          name: "Grey / L",
-          size: "L",
-          color: "Grey",
-          priceCents: 5499,
-          currency: "USD",
-          providerVariantId: "pf-2001",
-          isAvailable: false,
-        },
-      ],
-    },
-  ];
+  return validateCatalogConfig(catalogContent).products;
 }
 
 export class MockPrintProviderAdapter implements PrintProviderAdapter {
@@ -104,7 +52,7 @@ export class MockPrintProviderAdapter implements PrintProviderAdapter {
   }
 
   async listProducts(): Promise<Product[]> {
-    return this.products.map((product) => ({ ...product }));
+    return structuredClone(this.products);
   }
 
   async getProduct(productId: string): Promise<Product> {
@@ -112,7 +60,7 @@ export class MockPrintProviderAdapter implements PrintProviderAdapter {
     if (!product) {
       throw new ProviderNotFoundError(`Product not found: ${productId}`);
     }
-    return { ...product };
+    return structuredClone(product);
   }
 
   async getVariant(variantId: string): Promise<ProductVariant> {
@@ -146,10 +94,13 @@ export class MockPrintProviderAdapter implements PrintProviderAdapter {
       if (!this.findVariant(item.variantId)) {
         throw new ProviderNotFoundError(`Variant not found: ${item.variantId}`);
       }
-      if (item.quantity <= 0) {
+      if (!Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 10) {
         throw new ProviderOrderError(
           `Invalid quantity for variant ${item.variantId}: ${item.quantity}`,
         );
+      }
+      if (!(await this.checkAvailability(item.variantId))) {
+        throw new ProviderOrderError(`Variant unavailable: ${item.variantId}`);
       }
     }
 

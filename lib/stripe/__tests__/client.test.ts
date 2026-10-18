@@ -13,14 +13,18 @@ import { test, beforeEach, afterEach } from "node:test";
 import { getStripeClient, resetStripeClientForTests } from "../client.ts";
 
 const ORIGINAL_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const ORIGINAL_SANDBOX = process.env.STRIPE_SANDBOX_ENABLED;
 
 beforeEach(() => {
   resetStripeClientForTests();
   delete process.env.STRIPE_SECRET_KEY;
+  process.env.STRIPE_SANDBOX_ENABLED = "true";
 });
 
 afterEach(() => {
   resetStripeClientForTests();
+  if (ORIGINAL_SANDBOX === undefined) delete process.env.STRIPE_SANDBOX_ENABLED;
+  else process.env.STRIPE_SANDBOX_ENABLED = ORIGINAL_SANDBOX;
   if (ORIGINAL_SECRET_KEY === undefined) {
     delete process.env.STRIPE_SECRET_KEY;
   } else {
@@ -41,6 +45,24 @@ test("getStripeClient returns a client once STRIPE_SECRET_KEY is configured", ()
   assert.ok(client);
   assert.equal(typeof client.checkout.sessions.create, "function");
   assert.equal(typeof client.webhooks.constructEvent, "function");
+});
+
+test("getStripeClient rejects live keys and requires explicit sandbox opt-in", () => {
+  process.env.STRIPE_SECRET_KEY = "sk_live_fake_contract_test";
+  assert.throws(() => getStripeClient(), /Only a Stripe test/);
+  process.env.STRIPE_SECRET_KEY = "sk_test_fake_contract_test";
+  delete process.env.STRIPE_SANDBOX_ENABLED;
+  assert.throws(() => getStripeClient(), /sandbox is disabled/);
+});
+
+test("cached clients cannot bypass a subsequently disabled sandbox", () => {
+  process.env.STRIPE_SECRET_KEY = "sk_test_fake_contract_test";
+  getStripeClient();
+  process.env.STRIPE_SANDBOX_ENABLED = "false";
+  assert.throws(() => getStripeClient(), /sandbox is disabled/);
+  process.env.STRIPE_SANDBOX_ENABLED = "true";
+  process.env.STRIPE_SECRET_KEY = "sk_live_fake_contract_test";
+  assert.throws(() => getStripeClient(), /Only a Stripe test/);
 });
 
 test("getStripeClient caches a singleton instance across calls", () => {

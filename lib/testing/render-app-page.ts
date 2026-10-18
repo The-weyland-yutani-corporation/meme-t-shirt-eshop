@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import Module from "node:module";
 import ts from "typescript";
+import { pathToFileURL } from "node:url";
 
 let extensionsInstalled = false;
 
@@ -40,6 +41,19 @@ function transpileAndCompile(mod: NodeModule, filename: string): void {
       target: ts.ScriptTarget.ES2020,
     },
     fileName: filename,
+    transformers: {
+      before: [(context) => {
+        const visit: ts.Visitor = (node) => {
+          if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) {
+            return ts.factory.createObjectLiteralExpression([
+              ts.factory.createPropertyAssignment("url", ts.factory.createStringLiteral(pathToFileURL(filename).href)),
+            ]);
+          }
+          return ts.visitEachChild(node, visit, context);
+        };
+        return (sourceFile) => ts.visitNode(sourceFile, visit) as ts.SourceFile;
+      }],
+    },
   });
 
   (mod as unknown as {

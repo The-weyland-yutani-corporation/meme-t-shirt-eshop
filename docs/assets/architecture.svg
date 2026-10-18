@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Meme Merch architecture and trust boundaries</title>
+  <desc id="desc">The browser uses a Next.js application backed by a validated synthetic catalog and mock provider. The connected demo reviews and simulates an outcome without payments or shipments. Stripe sandbox APIs and the Printful adapter are separate examples. Azure hosting is available through operator-provisioned infrastructure; durable orders and live fulfillment are future work.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#166534"/></marker>
+    <style>
+      text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #142d27; }
+      .title { font-size: 30px; font-weight: 700; }
+      .label { font-size: 19px; font-weight: 650; }
+      .note { font-size: 16px; }
+      .box { fill: #fff; stroke: #166534; stroke-width: 2; rx: 14; }
+      .future { fill: #fff; stroke: #6b7280; stroke-width: 2; stroke-dasharray: 7 6; rx: 14; }
+      .line { stroke: #166534; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="760" fill="#f5f7f2"/>
+  <text x="40" y="55" class="title">Meme Merch · architecture</text>
+  <text x="40" y="85" class="note">Solid: implemented local demo · Dashed: separate examples / future integration</text>
+  <rect x="30" y="115" width="1140" height="335" rx="20" fill="#e6f0e7" stroke="#9ab59e"/>
+  <text x="50" y="145" class="label">Connected synthetic journey — no PII, payment, or shipment</text>
+  <rect x="60" y="200" width="220" height="95" class="box"/>
+  <text x="85" y="238" class="label">Browser</text>
+  <text x="85" y="268" class="note">Search / select / act</text>
+  <rect x="350" y="200" width="225" height="95" class="box"/>
+  <text x="375" y="238" class="label">Next.js server</text>
+  <text x="375" y="268" class="note">Validate stock + totals</text>
+  <rect x="650" y="180" width="460" height="75" class="box"/>
+  <text x="675" y="212" class="label">Validated catalog → mock provider</text>
+  <text x="675" y="238" class="note">Synthetic variants, prices, stock, local SVG artwork</text>
+  <rect x="650" y="310" width="460" height="90" class="box"/>
+  <text x="675" y="345" class="label">Simulated completion / cancellation</text>
+  <text x="675" y="375" class="note">Demonstration outcome, not an order ledger</text>
+  <path d="M280 247 H350" class="line"/>
+  <path d="M650 217 H575" class="line"/>
+  <path d="M462 295 V355 H650" class="line"/>
+  <text x="50" y="425" class="note">Trust boundary: treat all browser inputs as untrusted; catalog determines price and availability.</text>
+  <rect x="40" y="485" width="340" height="135" class="future"/>
+  <text x="60" y="518" class="label">Separate integration examples</text>
+  <text x="60" y="550" class="note">Opt-in Stripe sandbox + signed webhook</text>
+  <text x="60" y="578" class="note">Process-local webhook orders / deduplication</text>
+  <text x="60" y="604" class="note">Printful adapter (not connected to demo)</text>
+  <rect x="420" y="485" width="340" height="135" class="box"/>
+  <text x="440" y="518" class="label">Operator-provisioned Azure</text>
+  <text x="440" y="550" class="note">App Service + staging deployment slot</text>
+  <text x="440" y="578" class="note">Health identity + Application Insights</text>
+  <text x="440" y="604" class="note">OIDC / approval / cost review required</text>
+  <rect x="800" y="485" width="360" height="135" class="future"/>
+  <text x="820" y="518" class="label">Future — not implemented</text>
+  <text x="820" y="550" class="note">Durable orders + transactional events</text>
+  <text x="820" y="578" class="note">Live fulfillment + customer data controls</text>
+  <text x="820" y="604" class="note">Production operations and abuse controls</text>
+  <text x="40" y="680" class="label">Release boundary</text>
+  <text x="40" y="710" class="note">Local demo evidence is not proof of Azure deployment, production readiness, license approval, or catalog acceptance.</text>
+</svg>
