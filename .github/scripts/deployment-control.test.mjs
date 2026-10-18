@@ -295,14 +295,14 @@ test("production site URL accepts only a canonical HTTPS origin", () => {
   );
 });
 
-test("deployment build validates and exports the configured production site URL", () => {
+test("deployment workflow uses the verified build path and configures the runtime URL", () => {
   assert.match(
     deploymentWorkflow,
-    /- name: Validate production build configuration[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?deployment-control\.mjs validate-site-url[\s\S]*?--url "\$NEXT_PUBLIC_SITE_URL"/,
+    /- name: Build and verify Next\.js application[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?deployment-build\.mjs[\s\S]*?--site-url "\$NEXT_PUBLIC_SITE_URL"/,
   );
   assert.match(
     deploymentWorkflow,
-    /- name: Build Next\.js application[\s\S]*?DEPLOYMENT_SHA: \$\{\{ needs\.resolve\.outputs\.deployment_sha \}\}[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?run: npm run build/,
+    /- name: Configure staging deployment settings[\s\S]*?NEXT_PUBLIC_SITE_URL: \$\{\{ vars\.AZURE_PRODUCTION_URL \}\}[\s\S]*?NEXT_PUBLIC_SITE_URL="\$NEXT_PUBLIC_SITE_URL"/,
   );
 });
 
