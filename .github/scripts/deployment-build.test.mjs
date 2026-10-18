@@ -12,23 +12,26 @@ import {
 const siteUrl = "https://shop.example.test";
 const deploymentSha = "a".repeat(40);
 
-async function writeMetadata(root, origin) {
-  const appDirectory = path.join(root, ".next", "server", "app");
-  await mkdir(appDirectory, { recursive: true });
+async function writeMetadataManifests(root, prerenderedRoutes = {}) {
+  const nextDirectory = path.join(root, ".next");
+  await mkdir(nextDirectory, { recursive: true });
   await writeFile(
-    path.join(appDirectory, "robots.txt.body"),
-    `User-Agent: *\nAllow: /\n\nSitemap: ${origin}/sitemap.xml\n`,
+    path.join(nextDirectory, "app-path-routes-manifest.json"),
+    JSON.stringify({
+      "/robots.txt/route": "/robots.txt",
+      "/sitemap.xml/route": "/sitemap.xml",
+    }),
   );
   await writeFile(
-    path.join(appDirectory, "sitemap.xml.body"),
-    `<urlset><url><loc>${origin}/</loc></url><url><loc>${origin}/catalog</loc></url></urlset>`,
+    path.join(nextDirectory, "prerender-manifest.json"),
+    JSON.stringify({ routes: prerenderedRoutes }),
   );
 }
 
 test("deployment build invokes npm with the validated production environment", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "deployment-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await writeMetadata(root, siteUrl);
+  await writeMetadataManifests(root);
   let invocation;
 
   await runDeploymentBuild({
@@ -51,12 +54,14 @@ test("deployment build invokes npm with the validated production environment", a
   assert.equal(invocation.options.env.DEPLOYMENT_SHA, deploymentSha);
 });
 
-test("built metadata verification fails on placeholder output", async (t) => {
+test("built metadata verification rejects persistent static route output", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "deployment-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await writeMetadata(root, "https://example-redacted.invalid");
+  await writeMetadataManifests(root, {
+    "/robots.txt": { initialRevalidateSeconds: false },
+  });
   await assert.rejects(
     verifyBuiltSiteMetadata(root, siteUrl),
-    /does not reference the configured production sitemap/,
+    /robots\.txt must not be prerendered/,
   );
 });

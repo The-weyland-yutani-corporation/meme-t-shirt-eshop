@@ -167,6 +167,84 @@ export async function pollHealth({
   );
 }
 
+export async function fetchSeoMetadata({
+  baseUrl,
+  expectedSiteUrl,
+  cacheKey,
+  fetchImpl = fetch,
+}) {
+  const base = productionSiteUrl(baseUrl);
+  const expectedOrigin = productionSiteUrl(expectedSiteUrl);
+  const headers = {
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+  };
+  const request = async (pathname) => {
+    const url = new URL(pathname, `${base}/`);
+    url.searchParams.set("deployment", cacheKey);
+    const response = await fetchImpl(url, {
+      cache: "no-store",
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new Error(`${pathname} returned HTTP ${response.status}`);
+    }
+    return response.text();
+  };
+
+  const [robots, sitemap] = await Promise.all([
+    request("/robots.txt"),
+    request("/sitemap.xml"),
+  ]);
+  if (
+    robots.includes("example-redacted.invalid") ||
+    !robots.includes(`Sitemap: ${expectedOrigin}/sitemap.xml`)
+  ) {
+    throw new Error("robots.txt does not reference the configured production sitemap");
+  }
+  const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+  if (
+    sitemap.includes("example-redacted.invalid") ||
+    locations.length === 0 ||
+    locations.some((location) => !location.startsWith(`${expectedOrigin}/`))
+  ) {
+    throw new Error("sitemap.xml contains a URL outside the configured production origin");
+  }
+  return { robots, sitemap };
+}
+
+export async function pollSeoMetadata({
+  baseUrl,
+  expectedSiteUrl,
+  cacheKey,
+  attempts = 12,
+  delayMs = 10_000,
+  fetchImpl = fetch,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchSeoMetadata({
+        baseUrl,
+        expectedSiteUrl,
+        cacheKey: `${cacheKey}-${attempt}`,
+        fetchImpl,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(delayMs);
+    }
+  }
+  throw new Error(
+    `SEO metadata verification failed after ${attempts} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
 export async function pollProductionInspection({
   url,
   expectedSha,
@@ -227,7 +305,12 @@ export async function runSlotDeployment({
     previousProduction.status === "ok" &&
     previousProduction.deploymentSha === expectedSha
   ) {
-    return { outcome: "already_deployed", swaps: 0, rollbacks: 0 };
+    try {
+      await checkProduction(expectedSha);
+      return { outcome: "already_deployed", swaps: 0, rollbacks: 0 };
+    } catch {
+      // Redeploy the exact package when health identity matches but live content does not.
+    }
   }
 
   await checkStaging(expectedSha);
@@ -407,14 +490,24 @@ async function commandOrchestrate(args) {
   const resourceGroup = argument("resource-group", args);
   const appName = argument("app-name", args);
   const healthPath = argument("health-path", args);
-  const stagingUrl = healthUrl(argument("staging-url", args), healthPath);
-  const productionUrl = healthUrl(argument("production-url", args), healthPath);
+  const stagingBaseUrl = productionSiteUrl(argument("staging-url", args));
+  const productionBaseUrl = productionSiteUrl(argument("production-url", args));
+  const stagingUrl = healthUrl(stagingBaseUrl, healthPath);
+  const productionUrl = healthUrl(productionBaseUrl, healthPath);
   const stateFile = argument("state-file", args);
   const attempts = Number(optionalArgument("attempts", args, "12"));
   const delayMs = Number(optionalArgument("delay-ms", args, "10000"));
 
-  const check = (url, sha) =>
-    pollHealth({ url, expectedSha: sha, attempts, delayMs });
+  const check = async (healthEndpoint, baseUrl, sha) => {
+    await pollHealth({ url: healthEndpoint, expectedSha: sha, attempts, delayMs });
+    await pollSeoMetadata({
+      baseUrl,
+      expectedSiteUrl: productionBaseUrl,
+      cacheKey: sha,
+      attempts,
+      delayMs,
+    });
+  };
   let previousProduction;
   if (previousSha) {
     if (previousHttpStatus) {
@@ -439,11 +532,16 @@ async function commandOrchestrate(args) {
   const result = await runSlotDeployment({
     expectedSha,
     previousProduction,
-    checkStaging: (sha) => check(stagingUrl, sha),
-    checkProduction: (sha) => check(productionUrl, sha),
+    checkStaging: (sha) => check(stagingUrl, stagingBaseUrl, sha),
+    checkProduction: (sha) => check(productionUrl, productionBaseUrl, sha),
     checkPreviousProduction: async (previous) => {
       if (previous.status === "ok") {
-        await check(productionUrl, previous.deploymentSha);
+        await pollHealth({
+          url: productionUrl,
+          expectedSha: previous.deploymentSha,
+          attempts,
+          delayMs,
+        });
         return;
       }
       const restored = await pollProductionInspection({
