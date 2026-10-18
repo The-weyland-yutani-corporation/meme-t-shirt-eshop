@@ -14,21 +14,21 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "487ad510223fae29667903a47e3ddee65fe3c6d331602ca61a66a54962359603"
+      "source_sha256": "e6bb8f070f83c5d66f328d9753bb184b406ca309138d8142bc1e201539e06a13"
     },
     {
       "name": "squad-implement-worker",
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
       "lock": ".github/workflows/squad-implement-worker.lock.yml",
-      "source_sha256": "63b8725a59bbcb7d93c2f8085aad2321401a798f4246d8d5163d1ac431058f79"
+      "source_sha256": "12c90f639bc3a630fe42b4b4701eb68f3ccf0a822afcfdc4a6ac430527df4255"
     },
     {
       "name": "squad-review",
       "source": "workflows/package/squad-review.md",
       "destination": ".github/workflows/squad-review.md",
       "lock": ".github/workflows/squad-review.lock.yml",
-      "source_sha256": "a6ca16a3d7430d0eeeca5b503b397f3f0c96e91e248d6f0363952b2cd81a91a3"
+      "source_sha256": "7213b19ca7e7ef69d6709f3950474cf33d6b1464a7cbeea1ec43801337fdb9f3"
     },
     {
       "name": "squad-deps-worker",

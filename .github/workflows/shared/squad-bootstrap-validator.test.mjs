@@ -144,7 +144,7 @@ test('canonicalizes deterministic implementation provenance fields before valida
   );
 });
 
-test('implementation worker permits application manifests without exposing governance paths', () => {
+test('implementation worker keeps .github protected while allowing product roots', () => {
   const workflow = readFileSync(
     new URL('../squad-implement-worker.md', import.meta.url),
     'utf8',
@@ -169,6 +169,10 @@ test('implementation worker permits application manifests without exposing gover
     'go.mod',
     'go.sum',
   ]);
+  assert.ok(
+    exclusions.every((path) => !path.startsWith('.github/')),
+    'protected-files exclusions must not permit any .github path',
+  );
 
   for (const governancePath of [
     '.github/workflows/**',
@@ -178,7 +182,18 @@ test('implementation worker permits application manifests without exposing gover
   ]) {
     assert.match(workflow, new RegExp(`      - ${governancePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }
+
+  assert.match(
+    workflow,
+    /must not create, modify, or delete any path\r?\n   under `\.github\/\*\*`/,
+  );
+  assert.match(
+    workflow,
+    /place them in an existing allowed root such as\r?\n   `scripts\/\*\*`, `tools\/\*\*`, `test\/\*\*`, or `tests\/\*\*` instead/,
+  );
+  assert.match(workflow, /Never use\r?\n   `\.github\/scripts\/\*\*` as a product implementation root/);
 });
+
 test('trusted handler persists only a missing exact implementation marker', () => {
   assert.deepEqual(
     ensurePersistedLegacyMarker({

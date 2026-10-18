@@ -4,6 +4,9 @@ run-name: "Squad review — PR #${{ github.event.inputs.issue_number || github.e
 description: Independently reviews agent-authored pull requests without editing or remediating
 private: false
 on:
+  bots:
+    - github-actions[bot]
+  roles: all
   workflow_dispatch:
     inputs:
       issue_number:
@@ -78,11 +81,12 @@ this workflow.
    If it is absent or not a positive integer, call `noop` and stop.
 2. Fetch the pull request from `${{ github.repository }}` and record its current
    40-character lowercase head SHA.
-3. For `workflow_dispatch`, require `request_origin` to equal `manual` and
-   `expected_head_sha` to equal the current head SHA. A missing, malformed, or
-   stale value, or a head repository other than `${{ github.repository }}`, is a
-   refusal: call `noop` and stop. This is the `/squad review` path relayed by
-   `workflows/squad.md`.
+3. For `workflow_dispatch`, require
+   `${{ github.event.inputs.request_origin }}` to equal `manual` and
+   `${{ github.event.inputs.expected_head_sha }}` to equal the current head SHA.
+   A missing, malformed, or stale value, or a head repository other than
+   `${{ github.repository }}`, is a refusal: call `noop` and stop. This is the
+   `/squad review` path relayed by `workflows/squad.md`.
 4. For `pull_request`, require the head repository to equal
    `${{ github.repository }}`. Forks and any event other than
    `ready_for_review` or `synchronize` are refused with `noop`.
@@ -127,8 +131,15 @@ machine-readable review marker is a standalone final line:
 
 If an existing review body contains the exact marker for the current head SHA,
 call `noop` and stop. Never re-review an unchanged head, including duplicate
-`synchronize` deliveries. Re-fetch the pull request immediately before emitting
-outputs; if its head SHA changed, call `noop` and let the newer run review it.
+`synchronize` deliveries. Deduplication is only by that exact current-head
+marker. A changed head SHA always requires a new review, including merge-only
+changes, content-equivalent changes, or changes with no pull-request-relevant
+blob differences. Never carry a prior-head review forward, compare prior and
+current heads for semantic or blob equivalence, or call `noop` because the
+current content appears equivalent to a previously reviewed head.
+
+Re-fetch the pull request immediately before emitting outputs; if its head SHA
+changed, call `noop` and let the newer run review it.
 
 ## Review procedure
 

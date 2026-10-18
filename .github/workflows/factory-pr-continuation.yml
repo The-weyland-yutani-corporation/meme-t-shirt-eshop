@@ -1,6 +1,9 @@
 name: Factory PR continuation
 
 on:
+  pull_request:
+    types:
+      - synchronize
   workflow_run:
     workflows:
       - Squad Implement Worker
@@ -21,6 +24,7 @@ permissions:
   checks: read
   contents: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   group: factory-pr-continuation-${{ github.repository }}
@@ -30,8 +34,14 @@ jobs:
   dispatch:
     name: Dispatch missing PR validation
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
+      - name: Check out trusted continuation implementation
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
       - name: Dispatch CI and Squad review for token-authored PRs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -39,6 +49,19 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
+            const continuation = await import(
+              pathToFileURL(
+                path.join(
+                  process.env.GITHUB_WORKSPACE,
+                  ".github",
+                  "scripts",
+                  "factory-pr-continuation.mjs",
+                ),
+              ).href
+            );
+
             const { owner, repo } = context.repo;
             const repository = `${owner}/${repo}`;
             const requiredChecks = [
@@ -53,6 +76,10 @@ jobs:
             }
 
             async function candidates() {
+              if (context.eventName === "pull_request") {
+                return [context.payload.pull_request];
+              }
+
               const requested = process.env.REQUESTED_PR.trim();
               if (requested) {
                 if (!/^[1-9][0-9]*$/.test(requested)) {
@@ -77,17 +104,23 @@ jobs:
             }
 
             for (const pull of await candidates()) {
-              if (
-                pull.state !== "open" ||
-                pull.head.repo?.full_name !== repository ||
-                !/^[0-9a-f]{40}$/.test(pull.head.sha)
-              ) {
-                core.notice(`PR #${pull.number}: not a valid same-repository open PR.`);
+              const candidate = continuation.evaluateContinuationPull(
+                pull,
+                repository,
+              );
+              if (!candidate.ok) {
+                core.notice(`PR #${pull.number}: ${candidate.reason}.`);
                 continue;
               }
 
-              const [checkRuns, reviews, reviewRuns] = await Promise.all([
+              const [checkRuns, commitStatuses, reviews, reviewRuns] =
+                await Promise.all([
                 allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                }),
+                allPages(github.rest.repos.listCommitStatusesForRef, {
                   owner,
                   repo,
                   ref: pull.head.sha,
@@ -105,9 +138,10 @@ jobs:
                   branch: context.payload.repository.default_branch,
                 }),
               ]);
+              const validationRuns = [...checkRuns, ...commitStatuses];
 
-              const hasAnyRequiredCheck = checkRuns.some((run) =>
-                requiredChecks.includes(run.name),
+              const hasAnyRequiredCheck = validationRuns.some((run) =>
+                requiredChecks.includes(run.name ?? run.context),
               );
               if (!hasAnyRequiredCheck) {
                 await github.rest.actions.createWorkflowDispatch({
@@ -148,8 +182,178 @@ jobs:
                   repo,
                   workflow_id: "squad-review.lock.yml",
                   ref: context.payload.repository.default_branch,
-                  inputs: { issue_number: String(pull.number) },
+                  inputs: {
+                    issue_number: String(pull.number),
+                    expected_head_sha: pull.head.sha,
+                    request_origin: "manual",
+                  },
                 });
                 core.notice(`PR #${pull.number}: dispatched Squad review.`);
               }
+
+              if (!candidate.implementation) continue;
+
+              if (pull.draft) {
+                core.notice(
+                  `PR #${pull.number}: legacy draft requires one-time operator migration; ` +
+                    "continuation will not attempt draft promotion.",
+                );
+                continue;
+              }
+
+              let mergeGateEvidence = continuation.evaluateMergeGateEvidence(
+                pull,
+                repository,
+                validationRuns,
+                reviews,
+              );
+              if (
+                !mergeGateEvidence.ok &&
+                continuation.isPendingMergeGateEvidence(mergeGateEvidence)
+              ) {
+                for (let attempt = 1; attempt <= 48; attempt += 1) {
+                  core.notice(
+                    `PR #${pull.number}: waiting for exact-head validation evidence ` +
+                      `(attempt ${attempt}/48).`,
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, 15_000));
+
+                  const { data: waitingPull } = await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: pull.number,
+                  });
+                  if (
+                    waitingPull.head.sha !== pull.head.sha ||
+                    !continuation.evaluateContinuationPull(
+                      waitingPull,
+                      repository,
+                    ).ok
+                  ) {
+                    mergeGateEvidence = {
+                      ok: false,
+                      reason: "pull request changed while validation was pending",
+                    };
+                    break;
+                  }
+
+                  const [waitingChecks, waitingStatuses, waitingReviews] =
+                    await Promise.all([
+                      allPages(github.rest.checks.listForRef, {
+                        owner,
+                        repo,
+                        ref: waitingPull.head.sha,
+                      }),
+                      allPages(github.rest.repos.listCommitStatusesForRef, {
+                        owner,
+                        repo,
+                        ref: waitingPull.head.sha,
+                      }),
+                      allPages(github.rest.pulls.listReviews, {
+                        owner,
+                        repo,
+                        pull_number: waitingPull.number,
+                      }),
+                    ]);
+                  mergeGateEvidence =
+                    continuation.evaluateMergeGateEvidence(
+                      waitingPull,
+                      repository,
+                      [...waitingChecks, ...waitingStatuses],
+                      waitingReviews,
+                    );
+                  if (
+                    mergeGateEvidence.ok ||
+                    !continuation.isPendingMergeGateEvidence(
+                      mergeGateEvidence,
+                    )
+                  ) {
+                    break;
+                  }
+                }
+              }
+              if (!mergeGateEvidence.ok) {
+                core.notice(
+                  `PR #${pull.number}: merge gate evidence incomplete: ${mergeGateEvidence.reason}.`,
+                );
+                continue;
+              }
+
+              const { data: refreshed } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pull.number,
+              });
+              if (
+                refreshed.head.sha !== pull.head.sha ||
+                !continuation.evaluateContinuationPull(refreshed, repository).ok
+              ) {
+                core.notice(
+                  `PR #${pull.number}: pull request changed before final validation.`,
+                );
+                continue;
+              }
+
+              const [finalChecks, finalStatuses, finalReviews] =
+                await Promise.all([
+                allPages(github.rest.checks.listForRef, {
+                  owner,
+                  repo,
+                  ref: refreshed.head.sha,
+                }),
+                allPages(github.rest.repos.listCommitStatusesForRef, {
+                  owner,
+                  repo,
+                  ref: refreshed.head.sha,
+                }),
+                allPages(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: refreshed.number,
+                }),
+              ]);
+              mergeGateEvidence = continuation.evaluateMergeGateEvidence(
+                refreshed,
+                repository,
+                [...finalChecks, ...finalStatuses],
+                finalReviews,
+              );
+              if (!mergeGateEvidence.ok) {
+                core.notice(
+                  `PR #${pull.number}: final merge-gate validation failed: ` +
+                    `${mergeGateEvidence.reason}.`,
+                );
+                continue;
+              }
+
+              const mergeGateRuns = await allPages(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner,
+                  repo,
+                  workflow_id: "autonomous-merge-gate.yml",
+                  event: "workflow_dispatch",
+                  branch: context.payload.repository.default_branch,
+                },
+              );
+              if (
+                continuation.hasActiveMergeGateRun(
+                  mergeGateRuns,
+                  pull.number,
+                )
+              ) {
+                core.notice(
+                  `PR #${pull.number}: autonomous merge gate is already active.`,
+                );
+                continue;
+              }
+
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: "autonomous-merge-gate.yml",
+                ref: context.payload.repository.default_branch,
+                inputs: { pr_number: String(pull.number) },
+              });
+              core.notice(`PR #${pull.number}: dispatched autonomous merge gate.`);
             }

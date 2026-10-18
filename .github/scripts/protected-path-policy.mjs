@@ -37,6 +37,7 @@ const PROTECTED_PATHS = [
       /^\.github\/(aw|agents|factories|skills)\//i.test(path) ||
       /^\.github\/workflows\//i.test(path) ||
       /^\.github\/scripts\/protected-path-policy(?:\.test)?\.mjs$/i.test(path) ||
+      /^\.github\/scripts\/workflow-dispatch-status-bridge(?:\.test)?\.mjs$/i.test(path) ||
       /(^|\/)(factory|control-plane)(\/|$|[._-])/i.test(path),
   },
 ];
