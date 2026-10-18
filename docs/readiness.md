@@ -126,3 +126,10 @@ and actual result, evidence link, and unresolved risk. Distinguish **passed**,
 **failed**, **not run**, and **blocked**. Keep sanitized screenshots/recordings
 in the [asset manifest](assets/README.md), not secrets or customer data.
 Close gates only on evidence and an explicit owner decision.
+
+- 2026-10-18 — Deploy Azure App Service run `39159556803` was cancelled by a
+  benign concurrency-group supersession from a subsequent commit's deploy run;
+  the next run succeeded within ~1 minute and no recurrence was observed. See
+  [incident record](incidents/2026-10-18-deploy-azure-app-service-cancellation.md)
+  for the full timeline and the one caveat (job-level logs were not retrievable
+  to directly confirm the cancelling actor).
