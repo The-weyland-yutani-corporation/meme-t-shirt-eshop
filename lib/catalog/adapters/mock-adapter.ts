@@ -42,7 +42,7 @@ function defaultProducts(): Product[] {
       description: "A soft-cotton unisex tee with a classic meme print.",
       categoryId: "t-shirts",
       tagIds: ["bestseller"],
-      images: ["/images/classic-meme-tee-front.png"],
+      images: ["/images/classic-meme-tee-front.svg"],
       variants: [
         {
           id: "classic-meme-tee-s-black",
@@ -74,7 +74,7 @@ function defaultProducts(): Product[] {
       description: "Heavyweight hoodie from a limited seasonal drop.",
       categoryId: "hoodies",
       tagIds: ["limited-edition"],
-      images: ["/images/limited-drop-hoodie-front.png"],
+      images: ["/images/limited-drop-hoodie-front.svg"],
       variants: [
         {
           id: "limited-drop-hoodie-l-grey",

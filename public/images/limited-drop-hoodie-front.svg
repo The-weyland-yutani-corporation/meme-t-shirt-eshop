@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-labelledby="title description">
+  <title id="title">Grey limited drop hoodie mockup</title>
+  <desc id="description">An original grey hoodie illustration with a bright abstract pixel pattern.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#c7d2fe"/>
+    </linearGradient>
+    <linearGradient id="hoodie" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#71717a"/>
+      <stop offset="1" stop-color="#3f3f46"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="26" flood-color="#312e81" flood-opacity=".24"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="1200" rx="80" fill="url(#background)"/>
+  <path d="M92 252h170v38H92zM938 910h170v38H938z" fill="#818cf8" opacity=".55"/>
+  <circle cx="1000" cy="220" r="108" fill="#a5b4fc" opacity=".65"/>
+  <g filter="url(#shadow)">
+    <path d="M454 202c23-57 79-96 146-96s123 39 146 96l86 55 134 186-157 115-55-74v476c0 47-38 85-85 85H481c-47 0-85-38-85-85V484l-55 74-157-115 134-186 86-55h50Z" fill="url(#hoodie)"/>
+    <path d="M454 202c18 130 77 199 146 199s128-69 146-199c-35-33-84-53-146-53s-111 20-146 53Z" fill="#52525b"/>
+    <path d="M505 215c17 84 49 127 95 127s78-43 95-127c-27-17-58-26-95-26s-68 9-95 26Z" fill="#27272a"/>
+    <path d="M470 760h260l42 170H428l42-170Z" fill="#52525b"/>
+    <path d="M526 767v158M674 767v158" stroke="#71717a" stroke-width="10"/>
+    <path d="M563 474h74v74h-74z" fill="#22d3ee"/>
+    <path d="M489 548h74v74h-74z" fill="#f472b6"/>
+    <path d="M637 548h74v74h-74z" fill="#fbbf24"/>
+    <path d="M563 622h74v74h-74z" fill="#a78bfa"/>
+    <path d="M505 350c-9 113 11 186 43 249M695 350c9 113-11 186-43 249" fill="none" stroke="#d4d4d8" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="549" cy="613" r="13" fill="#e4e4e7"/>
+    <circle cx="651" cy="613" r="13" fill="#e4e4e7"/>
+  </g>
+</svg>
