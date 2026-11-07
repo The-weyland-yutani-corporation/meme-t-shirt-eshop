@@ -126,3 +126,9 @@ and actual result, evidence link, and unresolved risk. Distinguish **passed**,
 **failed**, **not run**, and **blocked**. Keep sanitized screenshots/recordings
 in the [asset manifest](assets/README.md), not secrets or customer data.
 Close gates only on evidence and an explicit owner decision.
+
+- **Deploy Azure App Service cancellation (2026-10-18):** Investigated and
+  closed as a benign concurrency-group supersession — see
+  [incident record](incidents/2026-10-18-deploy-azure-app-service-cancellation.md)
+  for the timeline, root cause, and recovery evidence. No pipeline code
+  change required.
